@@ -1,0 +1,21 @@
+import { createRouter, createWebHistory } from 'vue-router'
+// import ChatView from '@/views/ChatView/ChatView.vue'
+import ZskView from '@/views/ZskView/ZskView.vue'
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    {
+      path: '/',
+      name: 'zsk',
+      component: ZskView,
+    },
+    {
+      path: '/zsk',
+      name: 'zsk',
+      component: ZskView,
+    }
+  ]
+})
+
+export default router
