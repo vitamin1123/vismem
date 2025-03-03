@@ -27,9 +27,13 @@
           v-model="fileList" 
           multiple 
           :max-count="9" 
-          accept="image/*" 
+          accept="image/png" 
           class="uploader"  
-          :after-read="afterRead"/>
+          :before-read="beforeRead"
+          :after-read="afterRead"
+          upload-icon="plus"
+          
+          />
 
         <!-- 分割符 -->
         <van-divider :style="{ color: '#8a8a8a', borderColor: '#8a8a8a', padding: '0 2rem' }"/>
@@ -40,6 +44,14 @@
           <van-icon name="location-o" class="location-icon" color="#44587D" />
           <span class="location-text">{{ loca }}</span>
         </div>
+        <van-button
+          type="primary"
+          block
+          @click="submitPost"
+          class="submit-button"
+        >
+          发表
+        </van-button>
       </div>
     </van-popup>
 
@@ -81,12 +93,13 @@
 <script lang="ts" setup>
 import { ref, computed, onMounted } from 'vue'
 import { showImagePreview } from 'vant';
+import Compressor from 'compressorjs';
 import { showToast } from 'vant';
-import type { UploaderInstance, UploaderFileListItem } from 'vant';
+import type { UploaderInstance, UploaderFileListItem, UploaderBeforeRead } from 'vant';
 import { useAuthStore } from '@/store/authStore'
 import apiClient from '@/plugins/axios'
 const user = useAuthStore();
-const loca = ref('江苏省泰州市靖江市季市镇利方超市')
+const loca = ref('江苏省泰州市靖江市')
 // const fileList = ref([]); 
 const fileList = ref<UploaderFileListItem[]>([]);
 const showTop = ref(false);
@@ -100,6 +113,16 @@ interface Post {
   images: string[]
   location: string
   gridColumn: number
+}
+
+interface GeolocationCoordinates {
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly altitude: number | null;
+  readonly accuracy: number;
+  readonly altitudeAccuracy: number | null;
+  readonly heading: number | null;
+  readonly speed: number | null;
 }
 
 const uploaderRef = ref<UploaderInstance>();
@@ -157,6 +180,50 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // 返回距离，单位：米
 }
+
+const beforeRead: UploaderBeforeRead = (file, detail) => {
+  return new Promise<File | File[] | undefined>((resolve) => {
+    if (Array.isArray(file)) {
+      // 处理文件数组
+      const compressedFiles: File[] = [];
+      let completed = 0;
+
+      file.forEach((f) => {
+        new Compressor(f, {
+          quality: 0.6, // 设置压缩质量，0.6 表示 60% 的质量
+          success: (result) => {
+            compressedFiles.push(result as File);
+            completed++;
+
+            if (completed === file.length) {
+              resolve(compressedFiles);
+            }
+          },
+          error: (err) => {
+            console.error('Compression error:', err.message);
+            completed++;
+
+            if (completed === file.length) {
+              resolve(undefined);
+            }
+          },
+        });
+      });
+    } else {
+      // 处理单个文件
+      new Compressor(file, {
+        quality: 0.6, // 设置压缩质量，0.6 表示 60% 的质量
+        success: (result) => {
+          resolve(result as File);
+        },
+        error: (err) => {
+          console.error('Compression error:', err.message);
+          resolve(undefined);
+        },
+      });
+    }
+  });
+};
 
 // 获取用户当前定位
 const getUserLocation = (): Promise<GeolocationCoordinates> => {
@@ -261,10 +328,58 @@ const load = async() => {
     // filteredOptions.value = [...options.value];
   };
 
-  const afterRead = (file:any) => {
-      // 此时可以自行将文件上传至服务器
-     // showTop.value = true;
+  const afterRead = (file:UploaderFileListItem | UploaderFileListItem[]) => {
+    console.log('afterRead:', file); // 打印文件对象
+  if (Array.isArray(file)) {
+    file.forEach(f => {
+      console.log('多个文件类型:', f.file?.type); // 打印每个文件的类型
+    });
+  } else {
+    console.log('单个文件类型:', file.file?.type); // 打印文件类型
+  }
   };
+
+  // 点击发表按钮
+const submitPost = async () => {
+  if (!inputText.value.trim() && fileList.value.length === 0) {
+    showToast('请输入内容或上传图片');
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('content', inputText.value);
+    formData.append('location', loca.value);
+
+    // 添加文件到 FormData
+    fileList.value.forEach((file) => {
+      if (file.file) {
+        formData.append('files', file.file);
+      }
+    });
+
+    // 提交到后端
+    const response = await apiClient.post('/api/submit_post', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    if (response.data.success) {
+      showToast('发表成功');
+      // 清空表单
+      inputText.value = '';
+      fileList.value = [];
+      showTop.value = false; // 关闭 Popup
+    } else {
+      showToast('发表失败，请重试');
+    }
+  } catch (error) {
+    console.error('提交失败', error);
+    showToast('提交失败，请重试');
+  }
+};
+
 
 const click_bubble = () => {
     console.log('click_bubble')
@@ -433,76 +548,13 @@ onMounted(() => {
   width: 20vw;
   height: 27vw;
 }
+
+.submit-button {
+  margin-top: 2rem;
+  width: 80%;
+  display: block; /* 将按钮设置为块级元素 */
+  margin-left: auto; /* 水平居中 */
+  margin-right: auto;
+  
+}
 </style>
-
-<!-- <style lang="less" scoped>
-.post-container {
-  padding: 0.4rem;
-}
-
-.post-card {
-  margin-bottom: 0.5rem;
-  border: 1px solid #ebebeb;
-  border-radius: 8px;
-  padding: 0.7rem;
-  background-color: #fff;
-}
-
-.post-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.avatar {
-  width: 3rem;  /* 设置头像固定大小 */
-  height: 3rem; /* 设置头像固定大小 */
-  border-radius: 50%;
-  margin-right: 0.5rem;
-}
-
-.username {
-  font-weight: bold;
-}
-
-.timestamp {
-  font-size: 0.9rem;
-  color: #6e6d6d;
-}
-
-/* 将发布内容、图片、定位内容往右移动 */
-.post-body {
-  margin-left: 3rem; /* 向右移动一些 */
-}
-
-.post-content {
-  margin-bottom: 0.5rem;
-}
-
-.post-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.location {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-}
-
-.location-icon {
-  margin-right: 4px;
-}
-
-.post-actions {
-  display: flex;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.multi-image {
-  width: 20vw;
-  height: 27vw;
-}
-</style> -->
