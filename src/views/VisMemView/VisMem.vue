@@ -1,6 +1,32 @@
 <template>
   <div class="post-container">
+    <van-notice-bar
+    left-icon="volume-o"
+    :text="slogan+'值班干部签到表，点击加号新增签到记录'"
+    mode="closeable"
+    color="#1989fa" 
+    background="#ecf9ff"
+  />
+    <van-field
+      v-if="showCompanySelect"
+      v-model="selectedCompany"
+      label="选择公司"
+      is-link
+      readonly
+      clickable
+      @click="showCompanyPicker = true"
+    />
+    <van-popup v-model:show="showCompanyPicker" position="bottom">
+      <van-picker
+        show-toolbar
+        :columns="companyList"
+        @confirm="onCompanyConfirm"
+        @cancel="showCompanyPicker = false"
+      />
+    </van-popup>
+
     <van-floating-bubble
+      v-model:offset="offset"
       axis="xy"
       icon="plus"
       magnetic="x"
@@ -27,10 +53,13 @@
           v-model="fileList" 
           multiple 
           :max-count="9" 
-          accept="image/png, image/jpeg, image/jpg" 
+          accept="image/png" 
           class="uploader"  
           :before-read="beforeRead"
-          :after-read="afterRead"/>
+          :after-read="afterRead"
+          upload-icon="plus"
+          
+          />
 
         <!-- 分割符 -->
         <van-divider :style="{ color: '#8a8a8a', borderColor: '#8a8a8a', padding: '0 2rem' }"/>
@@ -41,7 +70,6 @@
           <van-icon name="location-o" class="location-icon" color="#44587D" />
           <span class="location-text">{{ loca }}</span>
         </div>
-
         <van-button
           type="primary"
           block
@@ -53,8 +81,11 @@
       </div>
     </van-popup>
 
-    <!-- 其他内容 -->
-    <div v-for="(post, index) in posts" :key="index" class="post-card">
+    <lazy-component v-for="(post, index) in posts" :key="index">
+      <template #loading>
+        <div class="loading-placeholder">加载中...</div>
+      </template>
+    <div class="post-card">
       <!-- 用户信息和发布时间 -->
       <div class="post-header">
         <img class="avatar" :src="post.avatar" alt="avatar" />
@@ -74,7 +105,8 @@
         <!-- 图片展示 -->
         <van-grid :column-num="post.gridColumn" :border="false">
           <van-grid-item v-for="(image, index) in post.images" :key="index" @click="click_img(post, index)">
-            <van-image :src="image" fit="cover" :class="post.images.length > 1 ? 'multi-image' : ''" />
+            <!-- <van-image :src="image" fit="cover" :class="post.images.length > 1 ? 'multi-image' : ''" /> -->
+              <van-image :src="image" lazy-load fit="cover" :class="post.images.length > 1 ? 'multi-image' : ''" />
           </van-grid-item>
         </van-grid>
 
@@ -83,27 +115,62 @@
           <van-icon name="location-o" class="location-icon" color="#44587D" />
           <span style="color: #44587D;">{{ post.location }}</span>
         </div>
+        <!-- v-if="canDeletePost(post)" -->
+        <van-button
+          v-if="canDeletePost(post)"
+          color="#7232dd"
+          size="mini"
+          @click="deletePost(post)"
+          class="delete-button"
+        >
+          删除
+        </van-button>
       </div>
     </div>
+  </lazy-component>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { ref, computed, onMounted } from 'vue'
 import { showImagePreview } from 'vant';
-import { showToast } from 'vant';
 import Compressor from 'compressorjs';
-import type { UploaderInstance, UploaderFileListItem } from 'vant';
+import { showToast } from 'vant';
+import type { UploaderInstance, UploaderFileListItem, UploaderBeforeRead } from 'vant';
 import { useAuthStore } from '@/store/authStore'
 import apiClient from '@/plugins/axios'
 const user = useAuthStore();
-const loca = ref('江苏省泰州市靖江市')
+const loca = ref('江苏省')
 // const fileList = ref([]); 
 const fileList = ref<UploaderFileListItem[]>([]);
 const showTop = ref(false);
 const inputText = ref('');
+const showCompanyPicker = ref(false);
+const selectedCompany = ref('');
+const selectedCompanyCode = ref('')
+const companyList = ref<CompanyOption[]>([]);
+const offset = ref({ x: 300, y: 100 });
+const slogan = ref('')
+  // 计算初始位置
+const calculateOffset = () => {
+  const windowWidth = window.innerWidth;
+  const windowHeight = window.innerHeight;
+
+  // 设置气泡位置为右下角，并稍微偏移
+  offset.value = {
+    x: windowWidth - 70, // 距离右侧 100px
+    y: windowHeight - 200, // 距离底部 100px
+  };
+};
+
+// 监听窗口大小变化
+const handleResize = () => {
+  calculateOffset();
+};
+
 // 定义每个发布项的数据结构
 interface Post {
+  id: string,
   avatar: string
   person: string
   timestamp: string
@@ -111,6 +178,33 @@ interface Post {
   images: string[]
   location: string
   gridColumn: number
+  userCode: string
+}
+
+interface VismemItem {
+  ope_name: string;
+  ope_time: string;
+  mem: string;
+  location: string;
+  img1?: string;
+  img2?: string;
+  img3?: string;
+  img4?: string;
+  img5?: string;
+  img6?: string;
+  img7?: string;
+  img8?: string;
+  img9?: string;
+}
+
+interface GeolocationCoordinates {
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly altitude: number | null;
+  readonly accuracy: number;
+  readonly altitudeAccuracy: number | null;
+  readonly heading: number | null;
+  readonly speed: number | null;
 }
 
 const uploaderRef = ref<UploaderInstance>();
@@ -118,36 +212,78 @@ const uploaderRef = ref<UploaderInstance>();
 // 定义发布内容数组
 const posts = ref<Post[]>([
   {
+    id: '',
     avatar: '',
-    person: '张勇',
+    person: '',
     timestamp: '2025年02月25日 23:12:27',
-    content: '分段、加工、船舶、钢结构加班正常，服务中班正常，员工在岗，其余正常。',
+    content: '正常。',
     images: [
-      'https://pic4.zhimg.com/v2-efd4f4517d5bdb43858a04f7e4ff5f7f_r.jpg',
-      'https://pic4.zhimg.com/v2-efd4f4517d5bdb43858a04f7e4ff5f7f_r.jpg',
-      'https://ww3.sinaimg.cn/mw690/006dJslggy1hpvd563l7hj30u0140gw8.jpg',
-      'https://pic4.zhimg.com/v2-efd4f4517d5bdb43858a04f7e4ff5f7f_r.jpg',
-      'https://pic.rmb.bdstatic.com/bjh/9012d49e5e9095703195a7a92128a7b45142.jpeg',
-      'https://ww3.sinaimg.cn/mw690/006dJslggy1hpvd563l7hj30u0140gw8.jpg',
-      'https://pic4.zhimg.com/v2-efd4f4517d5bdb43858a04f7e4ff5f7f_r.jpg',
-      'https://pic.rmb.bdstatic.com/bjh/9012d49e5e9095703195a7a92128a7b45142.jpeg'
+     
 
     ],
     location: '江苏省泰州市靖江市东兴镇',
-    gridColumn: 0
+    gridColumn: 0,
+    userCode: ''
   },
-  {
-    avatar: '',
-    person: '廖明东',
-    timestamp: '2025年02月24日 23:59:59',
-    content: '1、分段、钢结构、船舶加班正常；2、各岗位员工在岗；3、其余正常。',
-    images: [
-      'https://ww1.sinaimg.cn/mw690/9ef8454dgy1hu927c7ls2j21e023017j.jpg'
-    ],
-    location: '江苏省泰州市靖江市东兴镇',
-    gridColumn: 0
-  }
 ])
+
+const showCompanySelect = computed(() => {
+  return user.userCode === '10030203' || user.userCode === '10001007';
+});
+interface CompanyOption {
+  text: string;
+  value: string;
+}
+// 公司选择确认
+const onCompanyConfirm = async({ selectedOptions }: { selectedOptions: CompanyOption[] }) => {
+  if (selectedOptions.length > 0) {
+    
+    selectedCompany.value = selectedOptions[0].text; // 更新选中的公司
+    selectedCompanyCode.value = selectedOptions[0].value;
+    console.log(selectedCompanyCode.value); // 打印选中的选项
+    await load_post();
+    showCompanyPicker.value = false; // 关闭选择器
+  }
+};
+
+// 判断是否可以删除帖子
+const canDeletePost = (post: Post) => {
+  const postTime = new Date(post.timestamp).getTime();
+  const currentTime = new Date().getTime();
+  const timeDiff = (currentTime - postTime) / (1000 * 60); // 转换为分钟
+  return post.userCode === user.userCode && timeDiff < 2;
+};
+// 删除帖子
+const deletePost = async (post: Post) => {
+  try {
+    const response = await apiClient.post('/api/del_post', {
+      id: post.id,
+      userCode: user.userCode,
+      timestamp: post.timestamp,
+    });
+    console.log('delete_post--',response.data)
+    if (response.data.success) {
+      showToast(response.data.message);
+      // 重新加载帖子列表
+      load();
+    } else {
+      showToast(response.data.message);
+    }
+  } catch (error) {
+    console.error('删除失败', error);
+    showToast('删除失败，请重试');
+  }
+};
+
+// 获取公司列表
+const fetchCompanyList = async () => {
+  // 假设从后端返回的数据格式为 [{ company_code: string; company_name: string }]
+  const response = await apiClient.get('/api/company_list');
+  companyList.value = response.data.map((company: { company_code: string; company_name: string }) => ({
+    text: company.company_name,
+    value: company.company_code,
+  }));
+};
 
 // 动态计算 grid 列数
 posts.value.forEach(post => {
@@ -155,19 +291,63 @@ posts.value.forEach(post => {
 })
 
 // 判断两个经纬度之间的距离 (单位: 米)
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  const R = 6371e3; // 地球半径，单位：米
-  const φ1 = lat1 * Math.PI / 180; // 纬度转弧度
-  const φ2 = lat2 * Math.PI / 180; // 纬度转弧度
-  const Δφ = (lat2 - lat1) * Math.PI / 180; // 纬度差
-  const Δλ = (lon2 - lon1) * Math.PI / 180; // 经度差
+// const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+//   const R = 6371e3; // 地球半径，单位：米
+//   const φ1 = lat1 * Math.PI / 180; // 纬度转弧度
+//   const φ2 = lat2 * Math.PI / 180; // 纬度转弧度
+//   const Δφ = (lat2 - lat1) * Math.PI / 180; // 纬度差
+//   const Δλ = (lon2 - lon1) * Math.PI / 180; // 经度差
 
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) *
-    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // 返回距离，单位：米
-}
+//   const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+//     Math.cos(φ1) * Math.cos(φ2) *
+//     Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+//   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+//   return R * c; // 返回距离，单位：米
+// }
+
+const beforeRead: UploaderBeforeRead = (file, detail) => {
+  return new Promise<File | File[] | undefined>((resolve) => {
+    if (Array.isArray(file)) {
+      // 处理文件数组
+      const compressedFiles: File[] = [];
+      let completed = 0;
+
+      file.forEach((f) => {
+        new Compressor(f, {
+          quality: 0.6, // 设置压缩质量，0.6 表示 60% 的质量
+          success: (result) => {
+            compressedFiles.push(result as File);
+            completed++;
+
+            if (completed === file.length) {
+              resolve(compressedFiles);
+            }
+          },
+          error: (err) => {
+            console.error('Compression error:', err.message);
+            completed++;
+
+            if (completed === file.length) {
+              resolve(undefined);
+            }
+          },
+        });
+      });
+    } else {
+      // 处理单个文件
+      new Compressor(file, {
+        quality: 0.6, // 设置压缩质量，0.6 表示 60% 的质量
+        success: (result) => {
+          resolve(result as File);
+        },
+        error: (err) => {
+          console.error('Compression error:', err.message);
+          resolve(undefined);
+        },
+      });
+    }
+  });
+};
 
 // 获取用户当前定位
 const getUserLocation = (): Promise<GeolocationCoordinates> => {
@@ -187,8 +367,6 @@ const getUserLocation = (): Promise<GeolocationCoordinates> => {
   });
 }
 
-
-
 const formatLatLon = (longitude:any, latitude:any) => {
   // 判断经度是东经还是西经
   const lonDirection = longitude >= 0 ? '东经' : '西经';
@@ -202,127 +380,187 @@ const formatLatLon = (longitude:any, latitude:any) => {
   return `${lonDirection}${lonValue} | ${latDirection}${latValue}`;
 };
 
-// 限定范围（假设是某个经纬度范围内）
-const checkLocationInRange = async () => {
 
+const checkLocationInRange = async () => {
   try {
     const userLocation = await getUserLocation();
-    const userLat = userLocation.latitude;
-    const userLon = userLocation.longitude;
-    console.log('用户经纬度: ',userLon,userLat)
-    // showToast(userLon+"   |   "+userLat)
-    const url = `https://restapi.amap.com/v3/geocode/regeo?key=ff3b7440b36f1916d6e7f7f0e16930f9&s=rsv3&language=zh_cn&batch=true&location=${userLon},${userLat}&callback=jsonp_280324_&platform=JS&logversion=2.0&appname=http%3A%2F%2Fwww.atoolbox.net%2FTool.php&csid=141EE735-8687-4FA9-9D6C-E1B9FFB26CB2&sdkversion=1.4.27`
-    // 使用userLon,userLat请求这个地址
-   // 发送请求
-   const response = await apiClient.get(url);
-   const data = response.data; // 假设返回的数据在 response.data 中
+    const res = await apiClient.post('/api/get_location', {
+        userLat: userLocation.latitude,
+        userLon: userLocation.longitude,
+    });
+    loca.value = res.data.data
+    console.log('checkLocationInRange--',res.data)
+  }catch (error) {
+    console.error("获取定位失败", error);
+  }
+}
+// 限定范围（假设是某个经纬度范围内）
+// const checkLocationInRange = async () => {
 
-// console.log('API 返回数据: ', data);
+//   try {
+//     const userLocation = await getUserLocation();
+//     const userLat = userLocation.latitude;
+//     const userLon = userLocation.longitude;
+//     console.log('用户经纬度: ',userLon,userLat)
+//     // showToast(userLon+"   |   "+userLat)
+//     const url = `https://restapi.amap.com/v3/geocode/regeo?key=ff3b7440b36f1916d6e7f7f0e16930f9&s=rsv3&language=zh_cn&batch=true&location=${userLon},${userLat}&callback=jsonp_280324_&platform=JS&logversion=2.0&appname=http%3A%2F%2Fwww.atoolbox.net%2FTool.php&csid=141EE735-8687-4FA9-9D6C-E1B9FFB26CB2&sdkversion=1.4.27`
+//     // 使用userLon,userLat请求这个地址
+//    // 发送请求
+//    const response = await apiClient.get(url);
+//    const data = response.data; // 假设返回的数据在 response.data 中
 
-const jsonpData = data.match(/jsonp_280324_\((.*)\)/);
-    if (!jsonpData || !jsonpData[1]) {
-      throw new Error("返回数据格式不正确，无法解析 JSONP");
+// // console.log('API 返回数据: ', data);
+
+// const jsonpData = data.match(/jsonp_280324_\((.*)\)/);
+//     if (!jsonpData || !jsonpData[1]) {
+//       throw new Error("返回数据格式不正确，无法解析 JSONP");
+//     }
+
+//     // 解析 JSON 数据
+//     const jsonData = JSON.parse(jsonpData[1]);
+//     // console.log('解析后的 JSON 数据: ', jsonData);
+
+//     // 检查返回状态并提取街道信息
+//     if (jsonData.status === "1" && jsonData.regeocodes && jsonData.regeocodes.length > 0) {
+//       const addressComponent = jsonData.regeocodes[0].addressComponent;
+//       const formatted_address = jsonData.regeocodes[0].formatted_address;
+//       const street = addressComponent.streetNumber.street;
+//       const number = addressComponent.streetNumber.number;
+//       const formattedAddress = `${formatted_address}${street}${number}`;
+
+//       console.log('拼接后的街道地址: ', formattedAddress);
+//       if (formattedAddress) {
+//         loca.value = formattedAddress;
+//       }else{
+//         loca.value = formatLatLon(userLon,userLat)
+//       }
+//       // showToast(formattedAddress); // 显示拼接后的地址
+//     } else {
+//       console.error("无法获取街道信息");
+//       showToast("无法获取街道信息");
+//     }
+//   } catch (error) {
+//     console.error("获取定位失败", error);
+//   }
+// };
+
+const load_user = async() => {
+  try {
+    const response = await apiClient.post('/api/get_vismem');
+      console.log('get_vismem--',response.data)
+      user.userCode = response.data.userCode
+      slogan.value = response.data.data[0].company_name
+  } catch (error) {
+    console.error('get_vismem--',error);
+  }
+}
+
+const load_post = async() => {
+  try {
+    const response1 = await apiClient.post('/api/get_vismem_list',{
+        company: selectedCompanyCode.value,
+    });
+      console.log('response1--',response1.data)
+      const transformedPosts = response1.data.data.map((item: any) => {
+      const images = [item.img1, item.img2, item.img3, item.img4, item.img5, item.img6, item.img7, item.img8, item.img9]
+        .filter(img => img).map(img => `public/${img}`);; // 过滤掉空字符串
+
+      return {
+        avatar: generateAvatar(item.ope_name), // 生成头像
+        id: item.id,
+        person: item.ope_name,
+        userCode: item.ope,
+        timestamp: new Date(item.ope_time).toLocaleString(), // 格式化时间
+        content: item.mem,
+        images: images,
+        location: item.location,
+        gridColumn: images.length === 1 ? 1.5 : 3 // 动态计算 grid 列数
+      };
+    });
+
+    // 更新 posts
+    posts.value = transformedPosts;
+  } catch (error) {
+    console.error('get_vismem_list--',error);
+  }
+}
+
+const load = async() => {
+  
+    try {
+      await load_user()
+      await load_post()
+    } catch (error) {
+      console.error(error);
     }
 
-    // 解析 JSON 数据
-    const jsonData = JSON.parse(jsonpData[1]);
-    // console.log('解析后的 JSON 数据: ', jsonData);
+  };
 
-    // 检查返回状态并提取街道信息
-    if (jsonData.status === "1" && jsonData.regeocodes && jsonData.regeocodes.length > 0) {
-      const addressComponent = jsonData.regeocodes[0].addressComponent;
-      const formatted_address = jsonData.regeocodes[0].formatted_address;
-      const street = addressComponent.streetNumber.street;
-      const number = addressComponent.streetNumber.number;
-      const formattedAddress = `${formatted_address}${street}${number}`;
+  const afterRead = (file:UploaderFileListItem | UploaderFileListItem[]) => {
+    console.log('afterRead:', file); // 打印文件对象
+  if (Array.isArray(file)) {
+    file.forEach(f => {
+      console.log('多个文件类型:', f.file?.type); // 打印每个文件的类型
+    });
+  } else {
+    console.log('单个文件类型:', file.file?.type); // 打印文件类型
+  }
+  };
 
-      console.log('拼接后的街道地址: ', formattedAddress);
-      if (formattedAddress) {
-        loca.value = formattedAddress;
-      }else{
-        loca.value = formatLatLon(userLon,userLat)
+  // 点击发表按钮
+const submitPost = async () => {
+  if (!inputText.value.trim() && fileList.value.length === 0) {
+    showToast('请输入内容或上传图片');
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('content', inputText.value);
+    formData.append('location', loca.value);
+
+    // 添加文件到 FormData
+    fileList.value.forEach((file) => {
+      if (file.file) {
+        formData.append('files', file.file);
       }
-      // showToast(formattedAddress); // 显示拼接后的地址
+    });
+
+    // 提交到后端
+    const response = await apiClient.post('/api/submit_post', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    if (response.data.success) {
+      showToast('发表成功');
+      // 清空表单
+      inputText.value = '';
+      fileList.value = [];
+      await load_post();
+      showTop.value = false; // 关闭 Popup
     } else {
-      console.error("无法获取街道信息");
-      showToast("无法获取街道信息");
+      showToast('发表失败，请重试');
     }
   } catch (error) {
-    console.error("获取定位失败", error);
+    console.error('提交失败', error);
+    showToast('提交失败，请重试');
   }
 };
 
 
-const load = async() => {
-    try {
-      const response = await apiClient.post('/api/get_vismem');
-      console.log('get_vismem--',response.data.data)
-      user.userCode = response.data.userCode
-      console.log('get_vismem---',user.userCode)
-      
-
-      const response1 = await apiClient.post('/api/get_vismem_list');
-      console.log('get_vismem_list 返回数据:', response1.data.data); // 打印 API 返回的数据
-
-      // 将 API 返回的数据转换为 Post 接口的结构
-      const transformedPosts = response1.data.data.map((item: any) => {
-        const images = [item.img1, item.img2, item.img3, item.img4, item.img5, item.img6, item.img7, item.img8, item.img9]
-          .filter(img => img).map(img => `public/${img}`);// 过滤掉空字符串
-
-        return {
-          avatar: generateAvatar(item.ope_name), // 生成头像
-          person: item.ope_name,
-          timestamp: new Date(item.ope_time).toLocaleString(), // 格式化时间
-          content: item.mem,
-          images: images,
-          location: item.location,
-          gridColumn: images.length === 1 ? 1.5 : 3 // 动态计算 grid 列数
-        };
-      });
-
-      // 更新 posts
-      posts.value = transformedPosts;
-    } catch (error) {
-      console.error(error);
-    }
-    // filteredOptions.value = [...options.value];
-  };
-
-  const beforeRead = (file: any) =>
-  new Promise((resolve, reject) => {
-    // 使用 compressorjs 压缩图片
-    new Compressor(file, {
-      quality: 0.6, // 图片质量，范围：0 到 1，默认 0.8
-      maxWidth: 800, // 图片最大宽度
-      maxHeight: 800, // 图片最大高度
-      convertSize: 1000000, // 如果图片大小超过 1MB，则转换为 JPEG 格式
-      success(result: any) {
-        // 压缩成功，返回压缩后的文件
-        resolve(result);
-      },
-      error(err: any) {
-        // 压缩失败，返回错误
-        console.error('图片压缩失败:', err.message);
-        reject(err);
-      },
-    });
-  });
-
-  const afterRead = (file:any) => {
-      // 此时可以自行将文件上传至服务器
-     // showTop.value = true;
-  };
-
-const click_bubble = () => {
+const click_bubble = async() => {
     console.log('click_bubble')
     posts.value.forEach(post => {
       console.log(post.gridColumn)
   })
+  await checkLocationInRange();
   showTop.value = true;
   // uploaderRef.value?.chooseFile();
   
   // 执行定位检查
-  // checkLocationInRange();
+  
 }
 
 // 生成随机颜色
@@ -376,11 +614,17 @@ const click_img =(post: Post, index: number)=>{
   startPosition: index,
 });
 }
-onMounted(() => {
+onMounted(async() => {
+  calculateOffset();
+  window.addEventListener('resize', handleResize);
+  await load()
   posts.value.forEach(post => {
     post.avatar = generateAvatar(post.person); // 动态生成头像
   })
-  load()
+  
+  if (showCompanySelect.value) {
+    fetchCompanyList();
+  }
 })
 
 </script>
@@ -404,8 +648,8 @@ onMounted(() => {
 .location-info {
   display: flex;
   align-items: center;
-  justify-content: center; // 居中对齐
-  margin-top: 16px; // 增加上边距
+  justify-content: center;
+  margin-top: 16px;
 }
 
 .location-icon {
@@ -422,6 +666,7 @@ onMounted(() => {
   border-radius: 8px;
   padding: 0.7rem;
   background-color: #fff;
+  position: relative;
 }
 
 .post-header {
@@ -470,10 +715,10 @@ onMounted(() => {
   margin-right: 4px;
 }
 
-.post-actions {
-  display: flex;
-  justify-content: flex-start;
-  gap: 8px;
+.delete-button {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
 }
 
 .multi-image {
@@ -482,78 +727,10 @@ onMounted(() => {
 }
 
 .submit-button {
-  margin-top: 24px;
+  margin-top: 2rem;
+  width: 80%;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
 }
 </style>
-
-<!-- <style lang="less" scoped>
-.post-container {
-  padding: 0.4rem;
-}
-
-.post-card {
-  margin-bottom: 0.5rem;
-  border: 1px solid #ebebeb;
-  border-radius: 8px;
-  padding: 0.7rem;
-  background-color: #fff;
-}
-
-.post-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.avatar {
-  width: 3rem;  /* 设置头像固定大小 */
-  height: 3rem; /* 设置头像固定大小 */
-  border-radius: 50%;
-  margin-right: 0.5rem;
-}
-
-.username {
-  font-weight: bold;
-}
-
-.timestamp {
-  font-size: 0.9rem;
-  color: #6e6d6d;
-}
-
-/* 将发布内容、图片、定位内容往右移动 */
-.post-body {
-  margin-left: 3rem; /* 向右移动一些 */
-}
-
-.post-content {
-  margin-bottom: 0.5rem;
-}
-
-.post-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.location {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-}
-
-.location-icon {
-  margin-right: 4px;
-}
-
-.post-actions {
-  display: flex;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.multi-image {
-  width: 20vw;
-  height: 27vw;
-}
-</style> -->
