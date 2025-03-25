@@ -34,7 +34,8 @@
     "vue-pdf": "^4.3.0",
     "vue-pdf-embed": "^2.1.1",
     "vue-router": "^4.1.6",
-    "vuetify": "^3.7.18"
+    "vuetify": "^3.7.18",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.2.0",

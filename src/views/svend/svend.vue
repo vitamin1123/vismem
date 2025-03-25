@@ -93,7 +93,7 @@
 import apiClient from '@/plugins/axios'
 import { ref , onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next';
-
+import { tebian } from './components/parse_tebian';
 const currentCompany = ref('特变');
 const companies = ['特变', '沙钢', '卫源', '德瑞斯', '三鼎','朗度','兴澄','中船'];
 
@@ -156,7 +156,7 @@ const handleUserAction = (data) => {
   }
 };
 
-const beforeUpload = (file) => {
+const beforeUpload = async(file) => {
   const isExcel = file.type.includes('excel') || 
                  file.name.endsWith('.xlsx') || 
                  file.name.endsWith('.xls');
@@ -170,7 +170,24 @@ const beforeUpload = (file) => {
     MessagePlugin.error('文件大小不能超过 10MB!');
     return false;
   }
-  
+  // 新增特变公司解析逻辑
+  if (currentCompany.value === '特变') {
+    try {
+      // 传递原生File对象（注意不同UI库的参数结构）
+      const result = await tebian(file.raw || file);
+      
+      if (result.message) {
+        MessagePlugin.error(result.message);
+        return false;
+      }
+      
+      console.log('解析结果：', result);
+      MessagePlugin.success('Excel解析成功');
+    } catch (error) {
+      MessagePlugin.error(`解析失败：${error.message}`);
+      return false;
+    }
+  }
   return true;
 };
 
