@@ -1,50 +1,54 @@
 // src/router/index.ts
 import { createRouter, createWebHistory } from 'vue-router'
-import ZskView from '@/views/ZskView/ZskView.vue'
 import Result404 from '@/views/404View/404View.vue'
-import TestView from '@/views/TestView/TestView.vue'
+import SvendView from '@/views/svend/svend.vue'
+import loginView from '@/views/login/login.vue'
 import VisMemView from '@/views/VisMemView/VisMem.vue'
-import VisMemDeskView from '@/views/VisMemDeskView/VisMemDesk.vue'
 import { useAuthStore } from '@/store/authStore'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    {
-      path: '/',
-      name: 'home',
-      component: ZskView,
-    },
-    {
-      path: '/zsk',
-      name: 'zsk',
-      component: ZskView,
-    },
+
     {
       path: '/404',
       name: '404',
       component: Result404,
-    },
-    {
-      path: '/test',
-      name: 'test',
-      component: TestView,
+      meta: {
+        title: '404' // 自定义标题
+      }
     },
     {
       path: '/vismem',
       name: 'vismem',
       component: VisMemView,
+      meta: {
+        title: '值班打卡' // 自定义标题
+      }
+    },
+  
+    {
+      path: '/svend',
+      name: 'svend',
+      component: SvendView,
+      meta: {
+        title: '钢板供应商' // 自定义标题
+      }
     },
     {
-      path: '/vismemdesk',
-      name: 'vismemdesk',
-      component: VisMemDeskView,
+      path: '/login',
+      name: 'login',
+      component: loginView,
+      meta: {
+        title: '登录' // 自定义标题
+      }
     }
   ],
 })
 
 // 路由守卫
 router.beforeEach((to, from, next) => {
+  document.title = to.meta.title || '自助功能'
   const authStore = useAuthStore()
 
   // 从 URL 中提取 token 参数
@@ -60,8 +64,18 @@ router.beforeEach((to, from, next) => {
   }
 
   // 如果没有 token 并且 authStore 中也没有 token，重定向到 404
-  if (!tokenFromQuery && !authStore.token && to.path !== '/404') {
-    return next({ path: '/404' })
+  if (!tokenFromQuery && !authStore.token) {
+    console.log('确实没有token')
+    if (to.path === '/login' || to.path === '/404') {
+      return next()
+    }
+    // return next({ path: '/404' })
+    // 根据 vismem 参数判断跳转方向
+    if (to.path === '/vismem') {
+      return next({ path: '/404' })
+    } else {
+      return next({ path: '/login' })
+    }
   }
 
   next()
