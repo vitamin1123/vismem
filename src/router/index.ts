@@ -1,6 +1,6 @@
 // src/router/index.ts
 import { createRouter, createWebHistory } from 'vue-router'
-import Result404 from '@/views/404View/404View.vue'
+import Result404 from '@/views/NotFound404View/NotFound404View.vue'
 import SvendView from '@/views/svend/svend.vue'
 import loginView from '@/views/login/login.vue'
 import VisMemView from '@/views/VisMemView/VisMem.vue'
@@ -48,7 +48,8 @@ const router = createRouter({
 
 // 路由守卫
 router.beforeEach((to, from, next) => {
-  document.title = to.meta.title || '自助功能'
+  // document.title = to.meta.title || '自助功能'
+  document.title = (to.meta?.title as string) ?? '自助功能'
   const authStore = useAuthStore()
 
   // 从 URL 中提取 token 参数

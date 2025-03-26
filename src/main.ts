@@ -2,31 +2,14 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from '@/App.vue'
 import router from '@/router'
-// import { Button, Grid, GridItem, Icon, Image as VanImage, FloatingBubble, ImagePreview,Toast,Uploader ,Popup,Field, CellGroup,Divider,Picker ,Lazyload,NoticeBar       } from 'vant';
-// 2. 引入组件样式
+import { Lazyload } from 'vant'
 import 'vant/lib/index.css';
 import 'tdesign-vue-next/es/style/index.css';
 const app = createApp(App)
-
+app.use(Lazyload, {
+    lazyComponent: true  // 关键配置
+  })
 app.use(createPinia())
 app.use(router)
-// app.use(Popup);
-// app.use(Button);
-// app.use(Grid);
-// app.use(GridItem);
-// app.use(Field);
-// app.use(Lazyload, {
-//     lazyComponent: true,
-//   });
-// app.use(NoticeBar );
-// app.use(Divider);
-// app.use(CellGroup);
-// app.use(Icon);
-// app.use(VanImage);
-// app.use(FloatingBubble);
-// app.use(ImagePreview);
-// app.use(Toast);
-// app.use(Picker);
-// app.use(Uploader);
-// app.use(TDesign);
+
 app.mount('#app')

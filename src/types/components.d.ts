@@ -8,7 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    404View404View: typeof import('./../views/404View/404View.vue')['default']
+    NotFound404ViewNotFound404View: typeof import('./../views/NotFound404View/NotFound404View.vue')['default']
     DialogPlugin: typeof import('tdesign-vue-next')['DialogPlugin']
     EmpViewEmpView: typeof import('./../views/EmpView/EmpView.vue')['default']
     MessagePlugin: typeof import('tdesign-vue-next')['MessagePlugin']

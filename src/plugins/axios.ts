@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router'
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL, // 替换为你的 API 基础 URL
-  timeout: 10000,
+  timeout: 30000,
 })
 
 // 请求拦截器
