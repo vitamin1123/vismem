@@ -175,8 +175,9 @@ registerAllModules();
 const upkey = ref(Date.now()); // 初始化为当前时间戳
 const authStore = useAuthStore()
 const router = useRouter()
-const currentCompany = ref('特变');
-const companies = ['特变', '沙钢', '卫源', '德瑞斯', '三鼎','朗度','兴澄','中船'];
+const currentCompany = ref('');
+// '特变', '沙钢', '卫源', '德瑞斯', '三鼎','朗度','兴澄','中船'
+const companies = ref([]);
 const totalOrder = ref(0);
 const totalOrderFetched = ref(false);
 const currentSheetData = computed(() => {
@@ -472,6 +473,28 @@ const fetchData = async () => {
   }
 }
 
+const fetchData1 = async () => {
+  try {
+    const response = await apiClient.post('/api/getUserCompany',{userName:authStore.userCode})
+    
+    console.log('getUserCompany: ',response.data.data)
+    const uniqueCompanies = [...new Set(
+      response.data.data.map(item => item.company).filter(Boolean)
+    )];
+    
+    companies.value = uniqueCompanies;
+    
+    // 设置默认选中第一个公司（如果有的话）
+    if (companies.value.length > 0) {
+      currentCompany.value = companies.value[0];
+    }
+    totalOrderFetched.value = true; // 数据获取完成后启用按钮
+  } catch (error) {
+    console.error(error)
+    MessagePlugin.error('获取公司失败');
+    
+  }
+}
 const handleLogout = () => {
   // 清空 token 和 userCode
   authStore.clearToken()
@@ -481,8 +504,11 @@ const handleLogout = () => {
   router.push('/login')
 }
 
+
+
 onMounted(() => {
   fetchData()
+  fetchData1()
 })
 
 </script>

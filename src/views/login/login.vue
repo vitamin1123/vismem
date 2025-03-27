@@ -147,6 +147,7 @@ const handleSubmit = async () => {
     if (response.data.code === 200) {
       user.userCode = response.data.data.userInfo.username
       user.setToken(response.data.data.token)
+      user.setUserCode(response.data.data.userInfo.username)
       MessagePlugin.success('登录成功')
       router.push('/svend')
     } else {
