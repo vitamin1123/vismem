@@ -352,7 +352,7 @@ async function readExcelFile(file) {
     reader.readAsArrayBuffer(rawFile);  // 确保传入原生File对象
   });
 }
-function processSheet(workbook, sheetIndex) {
+async function processSheet(workbook, sheetIndex) {
   try {
     const sheetName = workbook.SheetNames[sheetIndex];
     const processor = {
@@ -361,7 +361,7 @@ function processSheet(workbook, sheetIndex) {
       2: processThirdSheet
     }[sheetIndex];
     
-    return processor(workbook);
+    return await processor(workbook);
   } catch (error) {
     return { message: error.message };
   }
@@ -378,14 +378,14 @@ export async function tebian(file) {
       //   processFirstSheet(filePath),
       //   processThirdSheet(filePath)
       // ];
-      const [data1, data2, data3] = [
+      const [data1, data2, data3] = await Promise.all([
         processSheet(workbook, 1), // 第二个sheet
         processSheet(workbook, 0), // 第一个sheet
         processSheet(workbook, 2)  // 第三个sheet
-      ];
+      ]);
       // 错误收集逻辑
       const errorCollector = (data, sheetNum) => {
-        if (!data.message) return null;
+        if (!data?.message) return null;
         const columns = data.message.split('列不存在')[0];
         return `第${sheetNum}个sheet的${columns}列缺失`;
       };

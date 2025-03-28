@@ -110,7 +110,8 @@
           <t-card title="数据上传" class="upload-card" :bordered="false">
             <t-upload
               v-model="files"
-              action="/api/upload"
+              :action="uploadConfig.action"
+              :headers="uploadConfig.headers"
               :before-upload="beforeUpload"
               :format-response="formatResponse"
               :tips="uploadTips"
@@ -140,12 +141,13 @@
                   :key="index"
                   :label="record.time"
                   :dot-color="record.success ? 'success' : 'error'"
+                  @click="handleTimelineClick(record)"
                 >
                   <div class="record-item">
                     <span class="filename">{{ record.filename }}</span>
-                    <span class="status" :class="record.success ? 'success' : 'error'">
+                    <!-- <span class="status" :class="record.success ? 'success' : 'error'">
                       {{ record.success ? '✓' : '✗' }}
-                    </span>
+                    </span> -->
                   </div>
                 </t-timeline-item>
               </t-timeline>
@@ -171,6 +173,8 @@ import 'handsontable/dist/handsontable.full.min.css';
 
 // Register Handsontable modules
 registerAllModules();
+
+
 
 const upkey = ref(Date.now()); // 初始化为当前时间戳
 const authStore = useAuthStore()
@@ -216,7 +220,12 @@ const hotSettings = ref({
 });
 
 
-
+const handleTimelineClick = (record) => {
+  console.log('点击了记录:', record);
+  console.log('记录ID:', record.id);
+  console.log('文件名:', record.filename);
+  console.log('上传时间:', record.time);
+};
 
 
 // 用户相关
@@ -232,6 +241,19 @@ const uploadRecords = ref([
   { time: '2025-03-25\n15:30', filename: '特变进度.xlsx', success: false },
   { time: '2025-03-25\n13:10', filename: '特变进度.xlsx', success: true },
 ]);
+
+const uploadConfig = ref({
+  action: 'https://chat.yzjship.com:8081/api/upload',
+  headers: {
+    'Authorization': `Bearer ${authStore.token}`, // 从store获取token
+    // 'Content-Type': 'multipart/form-data'
+  },
+  data: { // 附加表单数据
+    company: currentCompany.value 
+  },
+  name: 'file',
+  withCredentials: true
+});
 
 // 对话框控制
 const statsVisible = ref(false);
@@ -407,19 +429,16 @@ const beforeUpload = async(file) => {
     const parsedSheets = await parseExcel(fileObj);
     sheets.value = parsedSheets;
     activeSheet.value = 0;
-    // await nextTick();
-    // if (hotTableRef.value?.hotInstance) {
-    //   hotTableRef.value.hotInstance.render();
-    //   hotTableRef.value.hotInstance.view.adjustElementsSize();
-    // }
     upkey.value = Date.now();
     // 特变公司解析逻辑
     if (currentCompany.value === '特变') {
       const result = await tebian(fileObj)
+      console.log('PR: ',result)
       if (result.message) {
-        MessagePlugin.error(result.message)
-        return false
-      }
+      MessagePlugin.error(result.message); // 显示错误消息
+      return false; // 终止上传流程
+    }
+
       await showStatistics(result)
       MessagePlugin.success('Excel解析成功')
     }
@@ -433,8 +452,8 @@ const beforeUpload = async(file) => {
 }
 
 const formatResponse = (res) => {
-  if (res.code === 0) {
-    return { name: res.data.name, size: res.data.size };
+  if (res.success === true) {
+    return {  };
   }
   MessagePlugin.error(res.msg || '上传失败');
   return null;
@@ -444,7 +463,7 @@ const handleSuccess = ({ file }) => {
   MessagePlugin.success(`${file.name} 上传成功`);
   // 添加到上传记录
   uploadRecords.value.unshift({
-    time: new Date().toLocaleString(),
+    time: new Date().toLocaleString().replace(/,?\s/, '\n'),
     filename: file.name,
     success: true
   });
@@ -495,6 +514,38 @@ const fetchData1 = async () => {
     
   }
 }
+
+const formatTime = (isoString) => {
+  const date = new Date(isoString);
+  // 使用 UTC 方法，避免时区转换
+  return `${date.getUTCFullYear()}-${padZero(date.getUTCMonth() + 1)}-${padZero(date.getUTCDate())}\n${padZero(date.getUTCHours())}:${padZero(date.getUTCMinutes())}`;
+};
+
+// 辅助函数：补零
+const padZero = (num) => {
+  return num < 10 ? `0${num}` : num;
+}
+
+const insertNewlines = (str, interval) => {
+  return str.replace(new RegExp(`(.{${interval}})`, 'g'), '$1\n');
+};
+const fetchData2 = async () => {
+  try {
+    const response = await apiClient.post('/api/getMyUpR',{userName:authStore.userCode})
+    
+    uploadRecords.value = response.data.data.map(item => ({
+      id: item.id,
+      time: formatTime(item.uptime), // 格式化时间
+      filename: insertNewlines(item.filename, 20), 
+      success: true // 假设所有记录都是成功的，或者可以根据其他字段判断
+    }));
+    console.log('getMyUpR: ',response.data.data)
+  } catch (error) {
+    console.error(error)
+    MessagePlugin.error('获取公司失败');
+    
+  }
+}
 const handleLogout = () => {
   // 清空 token 和 userCode
   authStore.clearToken()
@@ -509,6 +560,7 @@ const handleLogout = () => {
 onMounted(() => {
   fetchData()
   fetchData1()
+  fetchData2()
 })
 
 </script>
@@ -608,7 +660,8 @@ onMounted(() => {
   margin-right: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  /* white-space: nowrap; */
+  white-space: pre;
 }
 
 .status {
