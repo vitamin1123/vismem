@@ -1,39 +1,64 @@
+<!-- (总订货量: ${totalOrder.toFixed(1)}吨) -->
 <template>
   <t-dialog
       v-model:visible="statsVisible"
-      :header="`生产统计 (总订货量: ${totalOrder.toFixed(1)}吨)`"
+      :header="`生产统计`"
       width="800px"
       :confirm-btn="'关闭'"
     >
-      <!-- 对话框内容 -->
-      <div class="stats-dialog">
-        <!-- 各公司统计 - 完全原始数据 -->
-        <div v-for="(data, name) in statsData" :key="name" class="stats-block">
-          <h4>{{ name }}统计</h4>
-          <div class="stats-grid">
-            <div class="completed-stats">
-              <h5>已完成</h5>
-              <pre>
+    <template v-if="currentCompany === '卫源'">
+  <div class="stats-dialog">
+    <div v-if="weiyuanData">
+      <div v-for="(dockData, month) in weiyuanData" :key="month" class="month-block">
+        <h3>{{ month }}</h3>
+        <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
+          <h4>{{ dock }}码头</h4>
+          <pre>
+已发货量: {{ stats.已发货量?.toFixed(1) || '0.0' }}吨
+已炼钢: {{ stats.已炼钢?.toFixed(1) || '0.0' }}吨
+已轧制: {{ stats.已轧制?.toFixed(1) || '0.0' }}吨
+已船检: {{ stats.已船检?.toFixed(1) || '0.0' }}吨
+已集港: {{ stats.已集港?.toFixed(1) || '0.0' }}吨
+          </pre>
+        </div>
+      </div>
+    </div>
+    <div v-else>
+      <p>暂无数据</p>
+    </div>
+  </div>
+</template>
+
+  <!-- 特变数据模板（原模板） -->
+  <template v-else>
+    <div class="stats-dialog">
+      <div v-for="(data, name) in statsData" :key="name" class="stats-block">
+        <h4>{{ name }}统计</h4>
+        <div class="stats-grid">
+          <div class="completed-stats">
+            <h5>已完成</h5>
+            <pre>
   {{ name === '涟钢' && data.已发运 ? `已发运: ${data.已发运.toFixed(1)}吨` : '' }}
   {{ data.已炼钢 ? `已炼钢: ${data.已炼钢.toFixed(1)}吨` : '' }}
   {{ data.已轧制 ? `已轧制: ${data.已轧制.toFixed(1)}吨` : '' }}
   {{ data.已船检 ? `已船检: ${data.已船检.toFixed(1)}吨` : '' }}
   {{ data.已集港 ? `已集港: ${data.已集港.toFixed(1)}吨` : '' }}
-              </pre>
-            </div>
-            <div class="uncompleted-stats">
-              <h5>未完成</h5>
-              <pre>
+            </pre>
+          </div>
+          <div class="uncompleted-stats">
+            <h5>未完成</h5>
+            <pre>
   {{ name !== '涟钢' && data.未发运 ? `未发运: ${data.未发运.toFixed(1)}吨` : '' }}
   {{ data.未炼钢 ? `未炼钢: ${data.未炼钢.toFixed(1)}吨` : '' }}
   {{ data.未轧制 ? `未轧制: ${data.未轧制.toFixed(1)}吨` : '' }}
   {{ data.未船检 ? `未船检: ${data.未船检.toFixed(1)}吨` : '' }}
   {{ data.未集港 ? `未集港: ${data.未集港.toFixed(1)}吨` : '' }}
-              </pre>
-            </div>
+            </pre>
           </div>
         </div>
       </div>
+    </div>
+  </template>
     </t-dialog>
     <div class="page-container">
       <!-- 导航栏 -->
@@ -101,7 +126,7 @@
             </div>
             <div v-show="sheets.length === 0" class="empty-preview">
               <t-icon name="file-excel" size="48px" />
-              <p>上传Excel文件后预览内容将显示在这里currentSheetData</p>
+              <p>上传Excel文件后预览内容将显示在这里</p>
             </div>
           </t-card>
         </div>
@@ -164,6 +189,8 @@ import apiClient from '@/plugins/axios'
 import { ref, onMounted, computed, onBeforeUnmount, nextTick,watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next';
 import { tebian } from './components/parse_tebian';
+import { weiyuan } from './components/parse_weiyuan';
+import { zhongchuan } from './components/parse_zhongchuan';
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'vue-router'
 import { HotTable } from '@handsontable/vue3';
@@ -194,7 +221,6 @@ const activeSheet = ref(0);
 const excelName = ref('');
 const hotSettings = ref({
   licenseKey: 'non-commercial-and-evaluation', // for non-commercial use
-  // data: currentSheetData.value,
   colHeaders: true,  // 显示列标题（A, B, C...）
   rowHeaders: true,  // 显示行号（1, 2, 3...）
   colWidths: 100,    // 统一列宽
@@ -233,17 +259,12 @@ const userAvatar = 'https://tdesign.gtimg.com/site/avatar.jpg';
 
 // 上传记录
 const uploadRecords = ref([
-  { time: '2025-05-15\n14:30', filename: '特变进度.xlsx', success: true },
-  { time: '2025-03-25\n09:15', filename: '特变进度.xlsx', success: true },
-  { time: '2025-03-25\n16:45', filename: '特变进度.xlsx', success: false },
-  { time: '2025-03-25\n11:20', filename: '特变进度.xlsx', success: true },
-  { time: '2025-03-25\n10:05', filename: '特变进度.xlsx', success: true },
-  { time: '2025-03-25\n15:30', filename: '特变进度.xlsx', success: false },
-  { time: '2025-03-25\n13:10', filename: '特变进度.xlsx', success: true },
+
+
 ]);
 
 const uploadConfig = ref({
-  action: 'https://chat.yzjship.com:8081/api/upload',
+  // action: 'https://chat.yzjship.com:8081/api/upload',
   headers: {
     'Authorization': `Bearer ${authStore.token}`, // 从store获取token
     // 'Content-Type': 'multipart/form-data'
@@ -262,7 +283,7 @@ const rawStatsData = ref({
   湘钢: [],
   首钢: []
 });
-
+const weiyuanData = ref(null); // 专门存储卫源的数据
 // 上传组件相关
 const files = ref([]);
 const uploadTips = '仅支持 Excel 文件 (.xlsx, .xls)，大小不超过 10MB';
@@ -340,20 +361,23 @@ const handleUserAction = (data) => {
 
 const showStatistics = async (result) => {
   try {
-    const resolvedData = {};
-    
-    // 解析各公司数据
-    for (const [factory, promise] of Object.entries(result)) {
-      try {
-        const items = await promise;
-        resolvedData[factory] = items;
-      } catch (error) {
-        console.error(`处理 ${factory} 数据时出错:`, error);
-        resolvedData[factory] = [];
+    if (currentCompany.value === '卫源') {
+      weiyuanData.value = result.byMonthDock; // 直接存储 byMonthDock 数据
+    } else {
+      // 特变等其他公司的处理逻辑保持不变
+      const resolvedData = {};
+      for (const [factory, promise] of Object.entries(result)) {
+        try {
+          const items = await promise;
+          resolvedData[factory] = items;
+        } catch (error) {
+          console.error(`处理 ${factory} 数据时出错:`, error);
+          resolvedData[factory] = [];
+        }
       }
+      rawStatsData.value = resolvedData;
     }
     
-    rawStatsData.value = resolvedData;
     statsVisible.value = true;
   } catch (error) {
     MessagePlugin.error(`数据加载失败: ${error.message}`);
@@ -406,6 +430,10 @@ const beforeUpload = async(file) => {
     MessagePlugin.warning('正在加载数据，请稍后上传')
     return false
   }
+  if(currentCompany.value === ''){
+    MessagePlugin.warning('账号没有对应的公司，请联系管理员')
+    return false
+  }
 
   const isExcel = file.type.includes('excel') || 
                  file.name.endsWith('.xlsx') || 
@@ -435,12 +463,36 @@ const beforeUpload = async(file) => {
       const result = await tebian(fileObj)
       console.log('PR: ',result)
       if (result.message) {
-      MessagePlugin.error(result.message); // 显示错误消息
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
       return false; // 终止上传流程
     }
 
       await showStatistics(result)
       MessagePlugin.success('Excel解析成功')
+    }else if (currentCompany.value === '卫源') {
+      const result = await weiyuan(fileObj)
+      console.log("PR--weiyuan:  ",result)
+      if (result.message) {
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
+        return false; // 终止上传流程
+      }
+      await showStatistics(result)
+      MessagePlugin.success('Excel解析成功')
+    }else  if(currentCompany.value === '中船'){
+      const result = await zhongchuan(file);
+      if (result.success) {
+        console.log('聚合数据:', result);
+      } else {
+        console.error('处理失败:', result);
+      }
     }
 
     return true
@@ -450,6 +502,10 @@ const beforeUpload = async(file) => {
     return false
   }
 }
+
+const up_extract_data = async () => {
+  
+};
 
 const formatResponse = (res) => {
   if (res.success === true) {
@@ -608,6 +664,8 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .empty-preview {
@@ -707,11 +765,14 @@ onMounted(() => {
   margin-top: 10px;
   overflow: auto;
   width: 100%;
-  height: calc(100vh - 200px); 
+  height: calc(100vh - 270px); 
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .handsontable {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-width: 2000px;
 }
 .handsontable .ht_clone_left .wtHolder {
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);

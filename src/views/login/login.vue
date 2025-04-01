@@ -11,8 +11,8 @@
           class="brand-logo"
           alt="Company Logo"
         />
-        <h1 class="brand-title">扬子江钢板供应商</h1>
-        <p class="brand-subtitle">进度维护</p>
+        <h1 class="brand-title">供应商生产情况执行反馈</h1>
+        <p class="brand-subtitle"></p>
       </div>
 
       <!-- 登录表单 -->
