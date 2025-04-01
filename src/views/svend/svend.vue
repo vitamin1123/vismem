@@ -4,7 +4,8 @@
       v-model:visible="statsVisible"
       :header="`生产统计`"
       width="800px"
-      :confirm-btn="'关闭'"
+      :confirm-btn="'上传'"
+      @confirm="up_extract_data"
     >
     <template v-if="currentCompany === '卫源'">
   <div class="stats-dialog">
@@ -28,7 +29,28 @@
     </div>
   </div>
 </template>
-
+<template v-else-if="currentCompany === '中船'">
+    <div class="stats-dialog">
+      <div v-if="zhongchuanData">
+        <div v-for="(dockData, month) in zhongchuanData.summary" :key="month" class="month-block">
+          <h3>{{ month }}月</h3>
+          <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
+            <h4>{{ dock }}</h4>
+            <pre>
+未炼钢: {{ stats.未炼钢 }}吨
+已轧制: {{ stats.已轧制 }}吨
+成品在库: {{ stats.成品在库 }}吨
+出库结束: {{ stats.出库结束 }}吨
+发运: {{ stats.发运 }}吨
+            </pre>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <p>暂无数据</p>
+      </div>
+    </div>
+  </template>
   <!-- 特变数据模板（原模板） -->
   <template v-else>
     <div class="stats-dialog">
@@ -256,7 +278,7 @@ const handleTimelineClick = (record) => {
 
 // 用户相关
 const userAvatar = 'https://tdesign.gtimg.com/site/avatar.jpg';
-
+const zhongchuanData = ref(null); // 存储中船的数据
 // 上传记录
 const uploadRecords = ref([
 
@@ -362,7 +384,9 @@ const handleUserAction = (data) => {
 const showStatistics = async (result) => {
   try {
     if (currentCompany.value === '卫源') {
-      weiyuanData.value = result.byMonthDock; // 直接存储 byMonthDock 数据
+      weiyuanData.value = result.byMonthDock;
+    } else if (currentCompany.value === '中船') {
+      zhongchuanData.value = result; // 存储中船返回的完整数据
     } else {
       // 特变等其他公司的处理逻辑保持不变
       const resolvedData = {};
@@ -396,7 +420,6 @@ const parseExcel = async (file) => {
         const parsedSheets = workbook.SheetNames.map((name, index) => {
           const worksheet = workbook.Sheets[name];
           const jsonData = utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-          // console.log('jsonData: ',JSON.parse(JSON.stringify(jsonData)))
           return {
             name: name,
             index: index,
@@ -424,6 +447,8 @@ watch(activeSheet, (newVal, oldVal) => {
     upkey.value = Date.now();
   }
 });
+
+
 
 const beforeUpload = async(file) => {
   if (!totalOrderFetched.value) {
@@ -490,6 +515,8 @@ const beforeUpload = async(file) => {
       const result = await zhongchuan(file);
       if (result.success) {
         console.log('聚合数据:', result);
+        await showStatistics(result);
+        MessagePlugin.success('Excel解析成功');
       } else {
         console.error('处理失败:', result);
       }
@@ -504,7 +531,45 @@ const beforeUpload = async(file) => {
 }
 
 const up_extract_data = async () => {
-  
+  try {
+        let dataToSend;
+        // Determine which data to send based on current company
+        if (currentCompany.value === '卫源') {
+          if (!weiyuanData.value) {
+            MessagePlugin.warning('没有可提交的卫源数据');
+            return;
+          }
+          dataToSend = weiyuanData.value;
+        } else if (currentCompany.value === '中船') {
+          if (!zhongchuanData.value) {
+            MessagePlugin.warning('没有可提交的中船数据');
+            return;
+          }
+          dataToSend = zhongchuanData.value;
+        } else {
+          // For other companies (特变 etc.)
+          if (!statsData.value) {
+            MessagePlugin.warning('没有可提交的数据');
+            return;
+          }
+          dataToSend = statsData.value;
+        }
+        const uploadResponse = await apiClient.post('/api/upload_extract', {
+          company: currentCompany.value,
+          data: JSON.stringify(dataToSend),
+        });
+        
+        if (uploadResponse.data.success) {
+          MessagePlugin.success('数据已成功保存到数据库');
+          await fetchData2();
+          statsVisible.value = false;
+        } else {
+          MessagePlugin.error('数据保存失败: ' + uploadResponse.data.message);
+        }
+      } catch (error) {
+        console.error('上传数据到后端失败:', error);
+        MessagePlugin.error('数据保存失败: ' + error.message);
+      }
 };
 
 const formatResponse = (res) => {
@@ -552,9 +617,9 @@ const fetchData1 = async () => {
   try {
     const response = await apiClient.post('/api/getUserCompany',{userName:authStore.userCode})
     
-    console.log('getUserCompany: ',response.data.data)
+    console.log('getUserCompany: ',response.data.data.recordset)
     const uniqueCompanies = [...new Set(
-      response.data.data.map(item => item.company).filter(Boolean)
+      response.data.data.recordset.map(item => item.company).filter(Boolean)
     )];
     
     companies.value = uniqueCompanies;
@@ -589,13 +654,13 @@ const fetchData2 = async () => {
   try {
     const response = await apiClient.post('/api/getMyUpR',{userName:authStore.userCode})
     
-    uploadRecords.value = response.data.data.map(item => ({
+    uploadRecords.value = response.data.data.recordset.map(item => ({
       id: item.id,
       time: formatTime(item.uptime), // 格式化时间
-      filename: insertNewlines(item.filename, 20), 
+      filename: item.company, 
       success: true // 假设所有记录都是成功的，或者可以根据其他字段判断
     }));
-    console.log('getMyUpR: ',response.data.data)
+    console.log('getMyUpR: ',response.data.data.recordset)
   } catch (error) {
     console.error(error)
     MessagePlugin.error('获取公司失败');

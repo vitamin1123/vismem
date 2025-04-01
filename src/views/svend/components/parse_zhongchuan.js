@@ -81,6 +81,80 @@ function parseMergedHeaders(sheet) {
   };
 }
 
+// export async function zhongchuan(file) {
+//   try {
+//     // 1. 读取Excel文件
+//     const workbook = await readExcelFile(file);
+//     const sheetName = workbook.SheetNames[0];
+//     const sheet = workbook.Sheets[sheetName];
+    
+//     if (!sheet) {
+//       throw new Error(`找不到工作表: ${sheetName}`);
+//     }
+
+//     // 2. 解析表头
+//     const { columns, dataStartRow } = parseMergedHeaders(sheet);
+    
+//     // 3. 定义需要提取的列及其完整路径
+//     const targetColumns = {
+//       '合同号': '合同号 > 合同号 > 合同号',
+//       '签订日期': '签订日期',
+//       '码头': '码头',
+//       '未炼钢': '坯料设计 > 未计划 > 重量',
+//       '已轧制': '轧钢完成 > 轧钢完成 > 重量',
+//       '成品在库': '成品在库 > 成品在库 > 重量',
+//       '出库结束': '出库结束 > 出库结束 > 重量',
+//       '发运': '发运 > 发运 > 重量'
+//     };
+
+//     // 4. 构建列索引映射
+//     const colIndex = {};
+//     for (const [colName, fullPath] of Object.entries(targetColumns)) {
+//       const col = columns.find(c => c.fullPath === fullPath);
+//       if (!col) throw new Error(`找不到列: ${fullPath}`);
+//       colIndex[colName] = col.index;
+//     }
+
+//     // 5. 重新处理数据提取
+//     const range = XLSX.utils.decode_range(sheet['!ref']);
+//     const rawData = [];
+    
+//     // 逐行读取数据（跳过表头）
+//     for (let r = dataStartRow; r <= range.e.r; r++) {
+//       const rowData = {};
+//       let hasData = false;
+      
+//       // 读取每个目标列
+//       for (const [colName, index] of Object.entries(colIndex)) {
+//         const cell = sheet[XLSX.utils.encode_cell({ r, c: index })];
+//         rowData[colName] = cell ? cell.v : null;
+//         if (rowData[colName] !== null) hasData = true;
+//       }
+      
+//       // 只添加有数据的行
+//       if (hasData) {
+//         rowData._row = r + 1; // 记录Excel实际行号
+//         rawData.push(rowData);
+//       }
+//     }
+
+//     return {
+//       success: true,
+//       rawData: rawData,
+//       columns: colIndex, // 返回各列的索引位置
+//       sheetName: sheetName
+//     };
+
+//   } catch (error) {
+//     console.error('处理失败:', error);
+//     return {
+//       success: false,
+//       message: `处理失败: ${error.message}`,
+//       error: error.stack
+//     };
+//   }
+// }
+
 export async function zhongchuan(file) {
   try {
     // 1. 读取Excel文件
@@ -95,9 +169,9 @@ export async function zhongchuan(file) {
     // 2. 解析表头
     const { columns, dataStartRow } = parseMergedHeaders(sheet);
     
-    // 3. 定义需要查找的列
+    // 3. 定义需要提取的列
     const targetColumns = {
-      '合同号': '合同号',
+      '合同号': '合同号 > 合同号 > 合同号',
       '签订日期': '签订日期',
       '码头': '码头',
       '未炼钢': '坯料设计 > 未计划 > 重量',
@@ -107,52 +181,84 @@ export async function zhongchuan(file) {
       '发运': '发运 > 发运 > 重量'
     };
 
-    // 4. 检查列匹配情况
-    const columnMatches = {};
+    // 4. 构建列索引
+    const colIndex = {};
     for (const [colName, fullPath] of Object.entries(targetColumns)) {
-      const foundCol = columns.find(col => col.fullPath === fullPath);
-      columnMatches[colName] = foundCol ? {
-        index: foundCol.index,
-        fullPath: foundCol.fullPath,
-        matched: true
-      } : {
-        fullPath,
-        matched: false
-      };
+      const col = columns.find(c => c.fullPath === fullPath);
+      if (!col) throw new Error(`找不到列: ${fullPath}`);
+      colIndex[colName] = col.index;
     }
 
-    // 5. 提取前5行数据用于验证
-    const sampleData = [];
+    // 5. 处理数据汇总
     const range = XLSX.utils.decode_range(sheet['!ref']);
-    range.s.r = dataStartRow;
-    range.e.r = Math.min(dataStartRow + 5, range.e.r); // 只取前5行
-    sheet['!ref'] = XLSX.utils.encode_range(range);
+    const summary = {};
+    
+    // 数值处理函数（保留3位小数）
+    const formatNum = (val) => {
+      const num = Math.max(Number(val) || 0, 0);
+      return parseFloat(num.toFixed(3));
+    };
 
-    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 0 });
-    for (const row of jsonData) {
-      const sampleRow = {};
-      for (const [colName, matchInfo] of Object.entries(columnMatches)) {
-        if (matchInfo.matched) {
-          sampleRow[colName] = row[matchInfo.index];
-        }
+    for (let r = dataStartRow; r <= range.e.r; r++) {
+      // 获取单元格值
+      const getValue = (colName) => {
+        const cell = sheet[XLSX.utils.encode_cell({ r, c: colIndex[colName] })];
+        return cell ? cell.v : null;
+      };
+
+      const signDate = getValue('签订日期');
+      const dock = getValue('码头');
+      
+      // 跳过无码头数据
+      if (!dock || dock.toString().trim() === '') continue;
+      
+      // 提取月份（只要数字）
+      let month = null;
+      if (signDate instanceof Date) {
+        month = String(signDate.getMonth() + 1); // 1-12
+      } else if (typeof signDate === 'string') {
+        const monthMatch = signDate.match(/(\d{1,2})月?/);
+        if (monthMatch) month = String(parseInt(monthMatch[1]));
       }
-      sampleData.push(sampleRow);
+      
+      // 跳过无月份数据
+      if (!month) continue;
+      
+      // 初始化汇总结构
+      if (!summary[month]) summary[month] = {};
+      if (!summary[month][dock]) {
+        summary[month][dock] = {
+          未炼钢: 0,
+          已轧制: 0,
+          成品在库: 0,
+          出库结束: 0,
+          发运: 0,
+          合同数: 0
+        };
+      }
+      
+      // 累加数据（保留3位小数）
+      const target = summary[month][dock];
+      target.未炼钢 = formatNum(target.未炼钢 + (Number(getValue('未炼钢')) || 0));
+      target.已轧制 = formatNum(target.已轧制 + (Number(getValue('已轧制')) || 0));
+      target.成品在库 = formatNum(target.成品在库 + (Number(getValue('成品在库')) || 0));
+      target.出库结束 = formatNum(target.出库结束 + (Number(getValue('出库结束')) || 0));
+      target.发运 = formatNum(target.发运 + (Number(getValue('发运')) || 0));
+      target.合同数++;
     }
 
     return {
       success: true,
-      columns: columnMatches,
-      availableColumns: columns.map(c => c.fullPath),
-      sampleData: sampleData,
-      sheetName: sheetName,
-      dataStartRow: dataStartRow
+      summary: summary,
+      columns: colIndex,
+      sheetName: sheetName
     };
 
   } catch (error) {
-    console.error('调试失败:', error);
+    console.error('处理失败:', error);
     return {
       success: false,
-      message: `调试失败: ${error.message}`,
+      message: `处理失败: ${error.message}`,
       error: error.stack
     };
   }
