@@ -401,7 +401,7 @@ export async function tebian(file) {
           message: `${errors.join('，')}，请检查excel文件结构是否符合要求` 
         };
       }
-      console.log(data1[0])
+      // console.log(data1[0])
       // 返回最终数据结构
       return {
         '涟钢': data1,

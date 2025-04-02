@@ -81,80 +81,6 @@ function parseMergedHeaders(sheet) {
   };
 }
 
-// export async function zhongchuan(file) {
-//   try {
-//     // 1. 读取Excel文件
-//     const workbook = await readExcelFile(file);
-//     const sheetName = workbook.SheetNames[0];
-//     const sheet = workbook.Sheets[sheetName];
-    
-//     if (!sheet) {
-//       throw new Error(`找不到工作表: ${sheetName}`);
-//     }
-
-//     // 2. 解析表头
-//     const { columns, dataStartRow } = parseMergedHeaders(sheet);
-    
-//     // 3. 定义需要提取的列及其完整路径
-//     const targetColumns = {
-//       '合同号': '合同号 > 合同号 > 合同号',
-//       '签订日期': '签订日期',
-//       '码头': '码头',
-//       '未炼钢': '坯料设计 > 未计划 > 重量',
-//       '已轧制': '轧钢完成 > 轧钢完成 > 重量',
-//       '成品在库': '成品在库 > 成品在库 > 重量',
-//       '出库结束': '出库结束 > 出库结束 > 重量',
-//       '发运': '发运 > 发运 > 重量'
-//     };
-
-//     // 4. 构建列索引映射
-//     const colIndex = {};
-//     for (const [colName, fullPath] of Object.entries(targetColumns)) {
-//       const col = columns.find(c => c.fullPath === fullPath);
-//       if (!col) throw new Error(`找不到列: ${fullPath}`);
-//       colIndex[colName] = col.index;
-//     }
-
-//     // 5. 重新处理数据提取
-//     const range = XLSX.utils.decode_range(sheet['!ref']);
-//     const rawData = [];
-    
-//     // 逐行读取数据（跳过表头）
-//     for (let r = dataStartRow; r <= range.e.r; r++) {
-//       const rowData = {};
-//       let hasData = false;
-      
-//       // 读取每个目标列
-//       for (const [colName, index] of Object.entries(colIndex)) {
-//         const cell = sheet[XLSX.utils.encode_cell({ r, c: index })];
-//         rowData[colName] = cell ? cell.v : null;
-//         if (rowData[colName] !== null) hasData = true;
-//       }
-      
-//       // 只添加有数据的行
-//       if (hasData) {
-//         rowData._row = r + 1; // 记录Excel实际行号
-//         rawData.push(rowData);
-//       }
-//     }
-
-//     return {
-//       success: true,
-//       rawData: rawData,
-//       columns: colIndex, // 返回各列的索引位置
-//       sheetName: sheetName
-//     };
-
-//   } catch (error) {
-//     console.error('处理失败:', error);
-//     return {
-//       success: false,
-//       message: `处理失败: ${error.message}`,
-//       error: error.stack
-//     };
-//   }
-// }
-
 export async function zhongchuan(file) {
   try {
     // 1. 读取Excel文件
@@ -172,6 +98,8 @@ export async function zhongchuan(file) {
     // 3. 定义需要提取的列
     const targetColumns = {
       '合同号': '合同号 > 合同号 > 合同号',
+      '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
+      '尺寸': '尺寸 > 尺寸 > 尺寸',
       '签订日期': '签订日期',
       '码头': '码头',
       '未炼钢': '坯料设计 > 未计划 > 重量',

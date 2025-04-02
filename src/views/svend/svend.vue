@@ -249,6 +249,11 @@ const hotSettings = ref({
   rowHeights: 24,    // 统一行高
   width: '100%',
   height: 'auto',
+  autoRowSize: false,
+  autoColumnSize: false,
+  manualColumnResize: true,
+  renderAllRows: false,
+  viewportRowRenderingOffset: 'auto',
   afterRender: () => console.log('渲染完成'), // 调试用
   // 手动定义列（关键！）
   // columns: currentSheetData.value[0]?.map((_, idx) => ({
@@ -268,28 +273,62 @@ const hotSettings = ref({
 });
 
 
-const handleTimelineClick = (record) => {
+const handleTimelineClick = async(record) => {
   console.log('点击了记录:', record);
   console.log('记录ID:', record.id);
-  console.log('文件名:', record.filename);
-  console.log('上传时间:', record.time);
+  try {
+    MessagePlugin.loading('正在加载数据...');
+    
+    // 请求后台获取详细数据
+    const response = await apiClient.post('/api/get_myr_detail', { 
+      id: record.id 
+    });
+    
+    if (!response.data.success) {
+      MessagePlugin.error(response.data.message || '获取数据失败');
+      return;
+    }
+
+    const detailData = response.data.data[0];
+    const company = response.data.data[0].company; // 假设返回数据中包含company字段
+    currentCompany.value = company;
+    console.log('get_myr_detail: ',response.data.data[0].data, company,response.data.data[0].data_huizong)
+    // 根据公司类型设置对应的数据和显示对话框
+    if (company === '卫源') {
+      weiyuanData.value = JSON.parse(detailData.data); 
+    } else if (company === '中船') {
+      zhongchuanData.value = JSON.parse(detailData.data);
+      console.log('zhongchuanData: ',zhongchuanData.value)
+    } else {
+      // 特变等其他公司
+      rawStatsData.value = JSON.parse(detailData.data_huizong);
+    }
+
+    // 显示统计对话框
+    statsVisible.value = true;
+    MessagePlugin.closeAll();
+    MessagePlugin.success('数据加载成功');
+
+  } catch (error) {
+    console.error('加载详细数据失败:', error);
+    MessagePlugin.closeAll();
+    MessagePlugin.error(`加载数据失败: ${error.message}`);
+  }
+
 };
 
 
 // 用户相关
 const userAvatar = 'https://tdesign.gtimg.com/site/avatar.jpg';
 const zhongchuanData = ref(null); // 存储中船的数据
-// 上传记录
-const uploadRecords = ref([
-
-
-]);
+const weiyuanData = ref(null); 
+const weiyuanData_detail = ref(null);
+const uploadRecords = ref([]);
 
 const uploadConfig = ref({
   // action: 'https://chat.yzjship.com:8081/api/upload',
   headers: {
-    'Authorization': `Bearer ${authStore.token}`, // 从store获取token
-    // 'Content-Type': 'multipart/form-data'
+    'Authorization': `Bearer ${authStore.token}`,
   },
   data: { // 附加表单数据
     company: currentCompany.value 
@@ -305,7 +344,7 @@ const rawStatsData = ref({
   湘钢: [],
   首钢: []
 });
-const weiyuanData = ref(null); // 专门存储卫源的数据
+
 // 上传组件相关
 const files = ref([]);
 const uploadTips = '仅支持 Excel 文件 (.xlsx, .xls)，大小不超过 10MB';
@@ -336,7 +375,6 @@ const fileColumns = [
   }},
 ];
 
-// 计算属性处理数据
 const statsData = computed(() => {
   const data = {
     涟钢: { 已发运: 0 }, 
@@ -344,7 +382,7 @@ const statsData = computed(() => {
     首钢: { 未发运: 0 }
   };
   
-  // 只提取原始数据，不做任何计算
+
   for (const [factory, items] of Object.entries(rawStatsData.value)) {
     if (!Array.isArray(items)) continue;
     
@@ -355,7 +393,6 @@ const statsData = computed(() => {
         data[factory].未发运 += Number(item.未发运) || 0;
       }
       
-      // 直接累加其他字段
       data[factory].未炼钢 = (data[factory].未炼钢 || 0) + (Number(item.未炼钢) || 0);
       data[factory].未轧制 = (data[factory].未轧制 || 0) + (Number(item.未轧制) || 0);
       data[factory].未船检 = (data[factory].未船检 || 0) + (Number(item.未船检) || 0);
@@ -377,7 +414,6 @@ const handleCompanyChange = (data) => {
 const handleUserAction = (data) => {
   if (data.value === 'logout') {
     MessagePlugin.info('您已退出登录');
-    // 这里添加退出登录的逻辑
   }
 };
 
@@ -385,10 +421,10 @@ const showStatistics = async (result) => {
   try {
     if (currentCompany.value === '卫源') {
       weiyuanData.value = result.byMonthDock;
+      weiyuanData_detail.value = result.detail;
     } else if (currentCompany.value === '中船') {
-      zhongchuanData.value = result; // 存储中船返回的完整数据
+      zhongchuanData.value = result; 
     } else {
-      // 特变等其他公司的处理逻辑保持不变
       const resolvedData = {};
       for (const [factory, promise] of Object.entries(result)) {
         try {
@@ -400,6 +436,7 @@ const showStatistics = async (result) => {
         }
       }
       rawStatsData.value = resolvedData;
+      
     }
     
     statsVisible.value = true;
@@ -533,6 +570,7 @@ const beforeUpload = async(file) => {
 const up_extract_data = async () => {
   try {
         let dataToSend;
+        let dataToSendAll;
         // Determine which data to send based on current company
         if (currentCompany.value === '卫源') {
           if (!weiyuanData.value) {
@@ -540,6 +578,7 @@ const up_extract_data = async () => {
             return;
           }
           dataToSend = weiyuanData.value;
+          dataToSendAll = weiyuanData_detail.value;
         } else if (currentCompany.value === '中船') {
           if (!zhongchuanData.value) {
             MessagePlugin.warning('没有可提交的中船数据');
@@ -552,11 +591,13 @@ const up_extract_data = async () => {
             MessagePlugin.warning('没有可提交的数据');
             return;
           }
+          dataToSendAll = rawStatsData.value;
           dataToSend = statsData.value;
         }
         const uploadResponse = await apiClient.post('/api/upload_extract', {
           company: currentCompany.value,
           data: JSON.stringify(dataToSend),
+          data_huizong: JSON.stringify(dataToSendAll),
         });
         
         if (uploadResponse.data.success) {
@@ -617,9 +658,9 @@ const fetchData1 = async () => {
   try {
     const response = await apiClient.post('/api/getUserCompany',{userName:authStore.userCode})
     
-    console.log('getUserCompany: ',response.data.data.recordset)
+    console.log('getUserCompany: ',response.data.data)
     const uniqueCompanies = [...new Set(
-      response.data.data.recordset.map(item => item.company).filter(Boolean)
+      response.data.data.map(item => item.company).filter(Boolean)
     )];
     
     companies.value = uniqueCompanies;
@@ -654,13 +695,13 @@ const fetchData2 = async () => {
   try {
     const response = await apiClient.post('/api/getMyUpR',{userName:authStore.userCode})
     
-    uploadRecords.value = response.data.data.recordset.map(item => ({
+    uploadRecords.value = response.data.data.map(item => ({
       id: item.id,
       time: formatTime(item.uptime), // 格式化时间
       filename: item.company, 
       success: true // 假设所有记录都是成功的，或者可以根据其他字段判断
     }));
-    console.log('getMyUpR: ',response.data.data.recordset)
+    console.log('getMyUpR: ',response.data.data)
   } catch (error) {
     console.error(error)
     MessagePlugin.error('获取公司失败');

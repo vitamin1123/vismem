@@ -34,7 +34,8 @@ async function processSheet(workbook) {
     // 2. 检查必要列是否存在
     const requiredColumns = [
       '合同编号', '已发货量', '已炼钢', 
-      '已轧制', '已船检', '已集港','码头'
+      '已轧制', '已船检', '已集港', '码头',
+      '订单钢种', '订单厚度', '订单宽度', '订单长度' // 新增必要列
     ];
     
     const { missingColumns, colIndex } = validateHeaders(headerRow, requiredColumns);
@@ -42,39 +43,58 @@ async function processSheet(workbook) {
       return errorResponse(sheetName, `缺少必要列: ${missingColumns.join(', ')}`);
     }
 
-    // 3. 处理数据行并按月份+码头聚合
-    const aggregatedData = aggregateByMonthAndDock(sheet, colIndex);
+    // 3. 处理数据行并获取明细和聚合数据
+    const { detailData, aggregatedData } = processData(sheet, colIndex);
     
-    return successResponse(sheetName, aggregatedData);
+    return successResponse(sheetName, { detailData, aggregatedData });
   } catch (error) {
     return errorResponse(sheetName, error.message, error);
   }
 }
 
-// 新增函数：按月份和码头聚合数据
-function aggregateByMonthAndDock(sheet, colIndex) {
+function processData(sheet, colIndex) {
   const range = XLSX.utils.decode_range(sheet['!ref']);
   range.s.r = 1;
   sheet['!ref'] = XLSX.utils.encode_range(range);
 
   const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-  const result = {};
+  const detailData = [];
+  const aggregatedData = {};
 
   for (const row of jsonData) {
     if (!row[colIndex['合同编号']]) continue;
+
+    // 规格描述 = 厚度*宽度*长度
+    const thickness = row[colIndex['订单厚度']] || '';
+    const width = row[colIndex['订单宽度']] || '';
+    const length = row[colIndex['订单长度']] || '';
+    const specDescription = `${thickness}*${width}*${length}`;
+
+    // 提取明细数据
+    const detailItem = {
+      合同编号: row[colIndex['合同编号']],
+      订单钢种: row[colIndex['订单钢种']] || '',
+      规格描述: specDescription, // 新增规格描述字段
+      已发货量: Math.max(Number(row[colIndex['已发货量']])) || 0,
+      已炼钢: Math.max(Number(row[colIndex['已炼钢']])) || 0,
+      已轧制: Math.max(Number(row[colIndex['已轧制']])) || 0,
+      已船检: Math.max(Number(row[colIndex['已船检']])) || 0,
+      已集港: Math.max(Number(row[colIndex['已集港']])) || 0,
+      码头: row[colIndex['码头']] || '未知码头'
+    };
+    detailData.push(detailItem);
 
     // 提取月份 (如从 "25XSH-SJ-2C043" 提取 "2月")
     const contractNumber = row[colIndex['合同编号']];
     const monthPart = contractNumber.split('-')[2]?.substr(0, 2) || '';
     const month = `${parseInt(monthPart)}月`;
 
-    const dock = row[colIndex['码头']] || '未知码头';
-    const toNum = (val) => Math.max(Number(val)) || 0;
-
-    // 初始化数据结构
-    if (!result[month]) result[month] = {};
-    if (!result[month][dock]) {
-      result[month][dock] = {
+    const dock = detailItem.码头;
+    
+    // 初始化聚合数据结构
+    if (!aggregatedData[month]) aggregatedData[month] = {};
+    if (!aggregatedData[month][dock]) {
+      aggregatedData[month][dock] = {
         已发货量: 0,
         已炼钢: 0,
         已轧制: 0,
@@ -83,19 +103,19 @@ function aggregateByMonthAndDock(sheet, colIndex) {
       };
     }
 
-    // 累加数据
-    const target = result[month][dock];
-    target.已发货量 += toNum(row[colIndex['已发货量']]);
-    target.已炼钢 += toNum(row[colIndex['已炼钢']]);
-    target.已轧制 += toNum(row[colIndex['已轧制']]);
-    target.已船检 += toNum(row[colIndex['已船检']]);
-    target.已集港 += toNum(row[colIndex['已集港']]);
+    // 累加聚合数据
+    const target = aggregatedData[month][dock];
+    target.已发货量 += detailItem.已发货量;
+    target.已炼钢 += detailItem.已炼钢;
+    target.已轧制 += detailItem.已轧制;
+    target.已船检 += detailItem.已船检;
+    target.已集港 += detailItem.已集港;
   }
 
-  return result;
+  return { detailData, aggregatedData };
 }
 
-// 保持以下辅助函数不变 (直接使用你原来的实现)
+// 保持以下辅助函数不变
 function readSheetHeaders(sheet) {
   const range = XLSX.utils.decode_range(sheet['!ref']);
   const headers = [];
@@ -162,7 +182,8 @@ export async function weiyuan(file) {
     }
 
     return {
-      byMonthDock: result[workbook.SheetNames[0]], // 提取聚合后的数据
+      detail: result[workbook.SheetNames[0]].detailData, // 明细数据
+      byMonthDock: result[workbook.SheetNames[0]].aggregatedData, // 聚合数据
       success: true
     };
 

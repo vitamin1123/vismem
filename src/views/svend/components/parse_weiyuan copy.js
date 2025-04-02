@@ -23,22 +23,14 @@ async function readExcelFile(file) {
   });
 }
 
-function processExpression(expr) {
-  var parts = expr.split('*');
-  const firstPart = parseFloat(parts[0]).toString();
-  const restParts = parts.slice(1);
-  return [firstPart, ...restParts].join('*');
-}
-
 async function processSheet(workbook) {
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
 
   try {
-    // 1. 读取表头（兼容空列和特殊字符）
+    // 1. 读取表头
     const headerRow = readSheetHeaders(sheet);
-    // console.log('处理后的表头:', headerRow);
-
+    
     // 2. 检查必要列是否存在
     const requiredColumns = [
       '合同编号', '已发货量', '已炼钢', 
@@ -50,21 +42,64 @@ async function processSheet(workbook) {
       return errorResponse(sheetName, `缺少必要列: ${missingColumns.join(', ')}`);
     }
 
-    // 3. 处理数据行
-    const data = processSheetData(sheet, colIndex);
+    // 3. 处理数据行并按月份+码头聚合
+    const aggregatedData = aggregateByMonthAndDock(sheet, colIndex);
     
-    return successResponse(sheetName, data);
+    return successResponse(sheetName, aggregatedData);
   } catch (error) {
     return errorResponse(sheetName, error.message, error);
   }
 }
 
-// 辅助函数：读取表头
+// 新增函数：按月份和码头聚合数据
+function aggregateByMonthAndDock(sheet, colIndex) {
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  range.s.r = 1;
+  sheet['!ref'] = XLSX.utils.encode_range(range);
+
+  const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  const result = {};
+
+  for (const row of jsonData) {
+    if (!row[colIndex['合同编号']]) continue;
+
+    // 提取月份 (如从 "25XSH-SJ-2C043" 提取 "2月")
+    const contractNumber = row[colIndex['合同编号']];
+    const monthPart = contractNumber.split('-')[2]?.substr(0, 2) || '';
+    const month = `${parseInt(monthPart)}月`;
+
+    const dock = row[colIndex['码头']] || '未知码头';
+    const toNum = (val) => Math.max(Number(val)) || 0;
+
+    // 初始化数据结构
+    if (!result[month]) result[month] = {};
+    if (!result[month][dock]) {
+      result[month][dock] = {
+        已发货量: 0,
+        已炼钢: 0,
+        已轧制: 0,
+        已船检: 0,
+        已集港: 0
+      };
+    }
+
+    // 累加数据
+    const target = result[month][dock];
+    target.已发货量 += toNum(row[colIndex['已发货量']]);
+    target.已炼钢 += toNum(row[colIndex['已炼钢']]);
+    target.已轧制 += toNum(row[colIndex['已轧制']]);
+    target.已船检 += toNum(row[colIndex['已船检']]);
+    target.已集港 += toNum(row[colIndex['已集港']]);
+  }
+
+  return result;
+}
+
+// 保持以下辅助函数不变 (直接使用你原来的实现)
 function readSheetHeaders(sheet) {
   const range = XLSX.utils.decode_range(sheet['!ref']);
   const headers = [];
   
-  // 查找最后一列有数据的列
   let lastCol = 0;
   for (let c = range.e.c; c >= 0; c--) {
     const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })];
@@ -74,7 +109,6 @@ function readSheetHeaders(sheet) {
     }
   }
 
-  // 读取所有列头
   for (let c = 0; c <= lastCol; c++) {
     const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })];
     headers.push(cell?.v?.toString().trim() || `未命名列_${c}`);
@@ -83,13 +117,12 @@ function readSheetHeaders(sheet) {
   return headers;
 }
 
-// 辅助函数：验证表头
 function validateHeaders(headers, requiredColumns) {
   const colIndex = {};
   const missingColumns = [];
   
   requiredColumns.forEach(col => {
-    const index = headers.findIndex(h => h.includes(col)); // 允许部分匹配
+    const index = headers.findIndex(h => h.includes(col));
     if (index === -1) {
       missingColumns.push(col);
     } else {
@@ -100,36 +133,6 @@ function validateHeaders(headers, requiredColumns) {
   return { missingColumns, colIndex };
 }
 
-// 辅助函数：处理数据行
-function processSheetData(sheet, colIndex) {
-  // 设置数据范围（跳过表头）
-  const range = XLSX.utils.decode_range(sheet['!ref']);
-  range.s.r = 1;
-  sheet['!ref'] = XLSX.utils.encode_range(range);
-
-  const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-  const result = [];
-
-  for (const row of jsonData) {
-    if (!row[colIndex['合同编号']]) continue;
-
-    const toNum = (val) => Math.max(Number(val) || 0, 0);
-    
-    result.push({
-      合同编号: row[colIndex['合同编号']],
-      已发货量: toNum(row[colIndex['已发货量']]),
-      已炼钢: toNum(row[colIndex['已炼钢']]),
-      已轧制: toNum(row[colIndex['已轧制']]),
-      已船检: toNum(row[colIndex['已船检']]),
-      已集港: toNum(row[colIndex['已集港']]),
-      码头: row[colIndex['码头']]
-    });
-  }
-
-  return result;
-}
-
-// 辅助函数：统一成功响应格式
 function successResponse(sheetName, data) {
   return {
     [sheetName]: data,
@@ -137,7 +140,6 @@ function successResponse(sheetName, data) {
   };
 }
 
-// 辅助函数：统一错误响应格式
 function errorResponse(sheetName, message, error = null) {
   console.error(`[${sheetName}] 处理失败:`, message, error);
   return {
@@ -151,19 +153,24 @@ export async function weiyuan(file) {
   try {
     const workbook = await readExcelFile(file);
     const result = await processSheet(workbook);
-    console.log('脚本里：',result);
+    
     if (!result.success) {
       return { 
-        message: `文件处理失败: ${result.message}` 
+        message: result.message,
+        success: false
       };
     }
 
-
-    return result;
-
+    return {
+      byMonthDock: result[workbook.SheetNames[0]], // 提取聚合后的数据
+      success: true
+    };
 
   } catch (err) {
     console.error("操作失败：", err);
-    return { message: `系统错误：${err.message}` };
+    return { 
+      message: `系统错误：${err.message}`,
+      success: false 
+    };
   }
 }
