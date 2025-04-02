@@ -32,7 +32,7 @@
 <template v-else-if="currentCompany === '中船'">
     <div class="stats-dialog">
       <div v-if="zhongchuanData">
-        <div v-for="(dockData, month) in zhongchuanData.summary" :key="month" class="month-block">
+        <div v-for="(dockData, month) in zhongchuanData" :key="month" class="month-block">
           <h3>{{ month }}月</h3>
           <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
             <h4>{{ dock }}</h4>
@@ -321,6 +321,7 @@ const handleTimelineClick = async(record) => {
 // 用户相关
 const userAvatar = 'https://tdesign.gtimg.com/site/avatar.jpg';
 const zhongchuanData = ref(null); // 存储中船的数据
+const zhongchuanData_detail = ref(null);
 const weiyuanData = ref(null); 
 const weiyuanData_detail = ref(null);
 const uploadRecords = ref([]);
@@ -423,7 +424,8 @@ const showStatistics = async (result) => {
       weiyuanData.value = result.byMonthDock;
       weiyuanData_detail.value = result.detail;
     } else if (currentCompany.value === '中船') {
-      zhongchuanData.value = result; 
+      zhongchuanData.value = result.summary; 
+      zhongchuanData_detail.value = result.details;
     } else {
       const resolvedData = {};
       for (const [factory, promise] of Object.entries(result)) {
@@ -556,6 +558,11 @@ const beforeUpload = async(file) => {
         MessagePlugin.success('Excel解析成功');
       } else {
         console.error('处理失败:', result);
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
       }
     }
 
@@ -585,6 +592,7 @@ const up_extract_data = async () => {
             return;
           }
           dataToSend = zhongchuanData.value;
+          dataToSendAll = zhongchuanData_detail.value;
         } else {
           // For other companies (特变 etc.)
           if (!statsData.value) {

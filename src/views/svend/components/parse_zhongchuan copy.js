@@ -1,166 +1,193 @@
 import * as XLSX from 'xlsx';
 
 async function readExcelFile(file) {
+  const rawFile = file.raw || file;
+  
+  if (!(rawFile instanceof Blob)) {
+    throw new Error('无效的文件对象');
+  }
+
   return new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          
-          if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
-            throw new Error('Excel文件中没有工作表');
-          }
-          
-          resolve(workbook);
-        } catch (error) {
-          reject(new Error(`解析Excel文件失败: ${error.message}`));
-        }
-      };
-      
-      reader.onerror = () => {
-        reject(new Error('读取文件失败'));
-      };
-      
-      if (file instanceof Blob) {
-        reader.readAsArrayBuffer(file);
-      } else if (file.raw instanceof Blob) {
-        reader.readAsArrayBuffer(file.raw);
-      } else {
-        reject(new Error('无效的文件对象，必须是Blob或包含raw属性的对象'));
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        resolve(workbook);
+      } catch (error) {
+        reject(error);
       }
-    } catch (error) {
-      reject(error);
-    }
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsArrayBuffer(rawFile);
   });
 }
 
-function parseHeaders(sheet) {
-  if (!sheet || !sheet['!ref']) {
-    throw new Error('无效的工作表');
+function parseMergedHeaders(sheet) {
+  if (!sheet['!ref']) {
+    throw new Error('无效的工作表，缺少范围定义');
   }
 
-  try {
-    const range = XLSX.utils.decode_range(sheet['!ref']);
-    const merges = sheet['!merges'] || [];
-    const headers = [];
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  const merges = sheet['!merges'] || [];
+  const headerRows = [];
 
-    // 1. 提取原始表头数据（假设表头在2-4行，0-based）
-    for (let r = 2; r <= 4; r++) {
-      const row = [];
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-        row.push(cell ? String(cell.v || '').trim() : '');
-      }
-      headers.push(row);
+  // 提取原始表头数据（3行）
+  for (let r = 2; r <= 4; r++) {
+    const row = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+      row.push(cell ? String(cell.v || '').trim() : '');
     }
+    headerRows.push(row);
+  }
 
-    // 2. 处理合并单元格
-    merges.forEach(merge => {
-      if (merge.s.r >= 2 && merge.s.r <= 4) {
-        const value = headers[merge.s.r - 2][merge.s.c];
-        for (let r = merge.s.r; r <= merge.e.r; r++) {
-          for (let c = merge.s.c; c <= merge.e.c; c++) {
-            if (r >= 2 && r <= 4) {
-              headers[r - 2][c] = value;
-            }
+  // 处理合并单元格
+  merges.forEach(merge => {
+    if (merge.s.r >= 2 && merge.s.r <= 4) {
+      const value = headerRows[merge.s.r - 2][merge.s.c];
+      for (let r = merge.s.r; r <= merge.e.r; r++) {
+        for (let c = merge.s.c; c <= merge.e.c; c++) {
+          if (r >= 2 && r <= 4) {
+            headerRows[r - 2][c] = value;
           }
         }
       }
-    });
-
-    // 3. 构建列定义
-    const columns = [];
-    for (let c = 0; c < headers[0].length; c++) {
-      const path = [
-        headers[0][c],
-        headers[1][c],
-        headers[2][c]
-      ].filter(Boolean);
-
-      columns.push({
-        index: c,
-        path: path,
-        fullPath: path.join(' > '),
-        level1: path[0] || null,
-        level2: path[1] || null,
-        level3: path[2] || null
-      });
     }
+  });
 
-    return {
-      columns,
-      dataStartRow: 5 // 数据从第6行开始
-    };
-  } catch (error) {
-    throw new Error(`解析表头失败: ${error.message}`);
+  // 构建列定义
+  const columns = [];
+  for (let c = 0; c < headerRows[0].length; c++) {
+    const path = [
+      headerRows[0][c],
+      headerRows[1][c],
+      headerRows[2][c]
+    ].filter(Boolean);
+
+    columns.push({
+      index: c,
+      path: path,
+      fullPath: path.join(' > '),
+      level1: path[0] || null,
+      level2: path[1] || null,
+      level3: path[2] || null
+    });
   }
+
+  return {
+    columns,
+    dataStartRow: 5 // 数据从第6行开始
+  };
 }
 
-export async function analyzeExcel(file) {
+export async function zhongchuan(file) {
   try {
-    console.log('开始解析Excel文件...');
-    
-    // 1. 读取文件
+    // 1. 读取Excel文件
     const workbook = await readExcelFile(file);
-    console.log('工作表列表:', workbook.SheetNames);
-    
-    // 2. 获取第一个工作表
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
+    
     if (!sheet) {
       throw new Error(`找不到工作表: ${sheetName}`);
     }
+
+    // 2. 解析表头
+    const { columns, dataStartRow } = parseMergedHeaders(sheet);
     
-    // 3. 解析表头
-    console.log('开始解析表头...');
-    const { columns } = parseHeaders(sheet);
+    // 3. 定义需要提取的列
+    const targetColumns = {
+      '合同号': '合同号 > 合同号 > 合同号',
+      '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
+      '尺寸': '尺寸 > 尺寸 > 尺寸',
+      '签订日期': '签订日期',
+      '码头': '码头',
+      '未炼钢': '坯料设计 > 未计划 > 重量',
+      '已轧制': '轧钢完成 > 轧钢完成 > 重量',
+      '成品在库': '成品在库 > 成品在库 > 重量',
+      '出库结束': '出库结束 > 出库结束 > 重量',
+      '发运': '发运 > 发运 > 重量'
+    };
+
+    // 4. 构建列索引
+    const colIndex = {};
+    for (const [colName, fullPath] of Object.entries(targetColumns)) {
+      const col = columns.find(c => c.fullPath === fullPath);
+      if (!col) throw new Error(`找不到列: ${fullPath}`);
+      colIndex[colName] = col.index;
+    }
+
+    // 5. 处理数据汇总
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    const summary = {};
     
-    // 4. 打印表头结构
-    console.log('==== 表头结构 ====');
-    console.log('列号\t层级1\t层级2\t层级3\t完整路径');
-    columns.forEach(col => {
-      console.log(
-        `${col.index}\t` +
-        `${col.level1 || ''}\t` +
-        `${col.level2 || ''}\t` +
-        `${col.level3 || ''}\t` +
-        `${col.fullPath}`
-      );
-    });
-    
-    // 5. 测试查找关键列
-    const testColumns = [
-      { name: '签订日期', path: ['签订日期'] },
-      { name: '码头', path: ['码头'] },
-      { name: '未炼钢', path: ['坯料设计', '未计划', '重量'] },
-      { name: '轧钢完成', path: ['轧钢完成', '重量'] }
-    ];
-    
-    console.log('\n==== 列查找测试 ====');
-    testColumns.forEach(test => {
-      const found = columns.find(col => 
-        test.path.every((part, i) => col.path[i] === part)
-      );
+    // 数值处理函数（保留3位小数）
+    const formatNum = (val) => {
+      const num = Math.max(Number(val) || 0, 0);
+      return parseFloat(num.toFixed(3));
+    };
+
+    for (let r = dataStartRow; r <= range.e.r; r++) {
+      // 获取单元格值
+      const getValue = (colName) => {
+        const cell = sheet[XLSX.utils.encode_cell({ r, c: colIndex[colName] })];
+        return cell ? cell.v : null;
+      };
+
+      const signDate = getValue('签订日期');
+      const dock = getValue('码头');
       
-      console.log(
-        `${test.name.padEnd(8)}: ` +
-        (found ? `列 ${found.index} - ${found.fullPath}` : '未找到')
-      );
-    });
-    
+      // 跳过无码头数据
+      if (!dock || dock.toString().trim() === '') continue;
+      
+      // 提取月份（只要数字）
+      let month = null;
+      if (signDate instanceof Date) {
+        month = String(signDate.getMonth() + 1); // 1-12
+      } else if (typeof signDate === 'string') {
+        const monthMatch = signDate.match(/(\d{1,2})月?/);
+        if (monthMatch) month = String(parseInt(monthMatch[1]));
+      }
+      
+      // 跳过无月份数据
+      if (!month) continue;
+      
+      // 初始化汇总结构
+      if (!summary[month]) summary[month] = {};
+      if (!summary[month][dock]) {
+        summary[month][dock] = {
+          未炼钢: 0,
+          已轧制: 0,
+          成品在库: 0,
+          出库结束: 0,
+          发运: 0,
+          合同数: 0
+        };
+      }
+      
+      // 累加数据（保留3位小数）
+      const target = summary[month][dock];
+      target.未炼钢 = formatNum(target.未炼钢 + (Number(getValue('未炼钢')) || 0));
+      target.已轧制 = formatNum(target.已轧制 + (Number(getValue('已轧制')) || 0));
+      target.成品在库 = formatNum(target.成品在库 + (Number(getValue('成品在库')) || 0));
+      target.出库结束 = formatNum(target.出库结束 + (Number(getValue('出库结束')) || 0));
+      target.发运 = formatNum(target.发运 + (Number(getValue('发运')) || 0));
+      target.合同数++;
+    }
+
     return {
       success: true,
-      sheetName,
-      columns
+      summary: summary,
+      columns: colIndex,
+      sheetName: sheetName
     };
+
   } catch (error) {
-    console.error('分析失败:', error);
+    console.error('处理失败:', error);
     return {
       success: false,
-      message: error.message
+      message: `处理失败: ${error.message}`,
+      error: error.stack
     };
   }
 }

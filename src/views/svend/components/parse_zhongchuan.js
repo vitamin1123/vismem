@@ -117,9 +117,10 @@ export async function zhongchuan(file) {
       colIndex[colName] = col.index;
     }
 
-    // 5. 处理数据汇总
+    // 5. 处理数据汇总和明细
     const range = XLSX.utils.decode_range(sheet['!ref']);
     const summary = {};
+    const details = []; // 新增明细数据数组
     
     // 数值处理函数（保留3位小数）
     const formatNum = (val) => {
@@ -134,6 +135,9 @@ export async function zhongchuan(file) {
         return cell ? cell.v : null;
       };
 
+      const contractNo = getValue('合同号');
+      const materialCode = getValue('牌号/材质代码');
+      const size = getValue('尺寸');
       const signDate = getValue('签订日期');
       const dock = getValue('码头');
       
@@ -165,19 +169,43 @@ export async function zhongchuan(file) {
         };
       }
       
-      // 累加数据（保留3位小数）
+      // 获取各重量值
+      const unplanned = formatNum(getValue('未炼钢') || 0);
+      const rolled = formatNum(getValue('已轧制') || 0);
+      const inStock = formatNum(getValue('成品在库') || 0);
+      const outbound = formatNum(getValue('出库结束') || 0);
+      const shipped = formatNum(getValue('发运') || 0);
+      
+      // 累加汇总数据
       const target = summary[month][dock];
-      target.未炼钢 = formatNum(target.未炼钢 + (Number(getValue('未炼钢')) || 0));
-      target.已轧制 = formatNum(target.已轧制 + (Number(getValue('已轧制')) || 0));
-      target.成品在库 = formatNum(target.成品在库 + (Number(getValue('成品在库')) || 0));
-      target.出库结束 = formatNum(target.出库结束 + (Number(getValue('出库结束')) || 0));
-      target.发运 = formatNum(target.发运 + (Number(getValue('发运')) || 0));
+      target.未炼钢 = formatNum(target.未炼钢 + unplanned);
+      target.已轧制 = formatNum(target.已轧制 + rolled);
+      target.成品在库 = formatNum(target.成品在库 + inStock);
+      target.出库结束 = formatNum(target.出库结束 + outbound);
+      target.发运 = formatNum(target.发运 + shipped);
       target.合同数++;
+      
+      // 添加明细数据
+      details.push({
+        月份: month,
+        码头: dock,
+        合同号: contractNo,
+        牌号材质代码: materialCode,
+        尺寸: size,
+        签订日期: signDate instanceof Date ? signDate.toISOString().split('T')[0] : signDate,
+        未炼钢: unplanned,
+        已轧制: rolled,
+        成品在库: inStock,
+        出库结束: outbound,
+        发运: shipped,
+        原始行号: r + 1 // Excel行号从1开始
+      });
     }
 
     return {
       success: true,
       summary: summary,
+      details: details, // 新增明细数据
       columns: colIndex,
       sheetName: sheetName
     };
