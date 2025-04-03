@@ -1,4 +1,4 @@
-<!-- (总订货量: ${totalOrder.toFixed(1)}吨) -->
+<!-- (总订货量: ${totalOrder.toFixed(3)}吨) -->
 <template>
   <t-dialog
       v-model:visible="statsVisible"
@@ -15,11 +15,11 @@
         <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
           <h4>{{ dock }}码头</h4>
           <pre>
-已发货量: {{ stats.已发货量?.toFixed(1) || '0.0' }}吨
-已炼钢: {{ stats.已炼钢?.toFixed(1) || '0.0' }}吨
-已轧制: {{ stats.已轧制?.toFixed(1) || '0.0' }}吨
-已船检: {{ stats.已船检?.toFixed(1) || '0.0' }}吨
-已集港: {{ stats.已集港?.toFixed(1) || '0.0' }}吨
+已发货量: {{ stats.已发货量?.toFixed(3) || '0.0' }}吨
+已炼钢: {{ stats.已炼钢?.toFixed(3) || '0.0' }}吨
+已轧制: {{ stats.已轧制?.toFixed(3) || '0.0' }}吨
+已船检: {{ stats.已船检?.toFixed(3) || '0.0' }}吨
+已集港: {{ stats.已集港?.toFixed(3) || '0.0' }}吨
           </pre>
         </div>
       </div>
@@ -51,6 +51,52 @@
       </div>
     </div>
   </template>
+
+  <template v-else-if="currentCompany === '朗度'">
+    <div class="stats-dialog">
+      <div v-if="langduData">
+        <div v-for="(dockData, month) in langduData" :key="month" class="month-block">
+          <h3>{{ month }}月</h3>
+          <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
+            <h4>{{ dock }}</h4>
+            <pre>
+未炼钢: {{ stats.未炼钢?.toFixed(3) || '0.0' }}吨
+已轧制: {{ stats.已轧制?.toFixed(3) || '0.0' }}吨
+已船检: {{ stats.已船检?.toFixed(3) || '0.0' }}吨
+已集港: {{ stats.已集港?.toFixed(3) || '0.0' }}吨
+已发运: {{ stats.已发运?.toFixed(3) || '0.0' }}吨
+            </pre>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <p>暂无数据</p>
+      </div>
+    </div>
+  </template>
+  <template v-else-if="currentCompany === '德瑞斯'">
+    <div class="stats-dialog">
+      <div v-if="deruisiData">
+        <div v-for="(dockData, month) in deruisiData" :key="month" class="month-block">
+          <h3>{{ month }}月</h3>
+          <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
+            <h4>{{ dock }}</h4>
+            <pre>
+未炼钢: {{ stats.未炼钢?.toFixed(3) || '0.0' }}吨
+未轧制: {{ stats.未轧制?.toFixed(3) || '0.0' }}吨
+未船检: {{ stats.未船检?.toFixed(3) || '0.0' }}吨
+未集港: {{ stats.未集港?.toFixed(3) || '0.0' }}吨
+已发运: {{ stats.已发运?.toFixed(3) || '0.0' }}吨
+未发运: {{ stats.未发运?.toFixed(3) || '0.0' }}吨
+            </pre>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <p>暂无数据</p>
+      </div>
+    </div>
+  </template>
   <!-- 特变数据模板（原模板） -->
   <template v-else>
     <div class="stats-dialog">
@@ -60,21 +106,21 @@
           <div class="completed-stats">
             <h5>已完成</h5>
             <pre>
-  {{ name === '涟钢' && data.已发运 ? `已发运: ${data.已发运.toFixed(1)}吨` : '' }}
-  {{ data.已炼钢 ? `已炼钢: ${data.已炼钢.toFixed(1)}吨` : '' }}
-  {{ data.已轧制 ? `已轧制: ${data.已轧制.toFixed(1)}吨` : '' }}
-  {{ data.已船检 ? `已船检: ${data.已船检.toFixed(1)}吨` : '' }}
-  {{ data.已集港 ? `已集港: ${data.已集港.toFixed(1)}吨` : '' }}
+  {{ name === '涟钢' && data.已发运 ? `已发运: ${data.已发运.toFixed(3)}吨` : '' }}
+  {{ data.已炼钢 ? `已炼钢: ${data.已炼钢.toFixed(3)}吨` : '' }}
+  {{ data.已轧制 ? `已轧制: ${data.已轧制.toFixed(3)}吨` : '' }}
+  {{ data.已船检 ? `已船检: ${data.已船检.toFixed(3)}吨` : '' }}
+  {{ data.已集港 ? `已集港: ${data.已集港.toFixed(3)}吨` : '' }}
             </pre>
           </div>
           <div class="uncompleted-stats">
             <h5>未完成</h5>
             <pre>
-  {{ name !== '涟钢' && data.未发运 ? `未发运: ${data.未发运.toFixed(1)}吨` : '' }}
-  {{ data.未炼钢 ? `未炼钢: ${data.未炼钢.toFixed(1)}吨` : '' }}
-  {{ data.未轧制 ? `未轧制: ${data.未轧制.toFixed(1)}吨` : '' }}
-  {{ data.未船检 ? `未船检: ${data.未船检.toFixed(1)}吨` : '' }}
-  {{ data.未集港 ? `未集港: ${data.未集港.toFixed(1)}吨` : '' }}
+  {{ name !== '涟钢' && data.未发运 ? `未发运: ${data.未发运.toFixed(3)}吨` : '' }}
+  {{ data.未炼钢 ? `未炼钢: ${data.未炼钢.toFixed(3)}吨` : '' }}
+  {{ data.未轧制 ? `未轧制: ${data.未轧制.toFixed(3)}吨` : '' }}
+  {{ data.未船检 ? `未船检: ${data.未船检.toFixed(3)}吨` : '' }}
+  {{ data.未集港 ? `未集港: ${data.未集港.toFixed(3)}吨` : '' }}
             </pre>
           </div>
         </div>
@@ -212,6 +258,8 @@ import { ref, onMounted, computed, onBeforeUnmount, nextTick,watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next';
 import { tebian } from './components/parse_tebian';
 import { weiyuan } from './components/parse_weiyuan';
+import { langdu } from './components/parse_langdu';
+import { deruisi } from './components/parse_deruisi';
 import { zhongchuan } from './components/parse_zhongchuan';
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'vue-router'
@@ -299,10 +347,22 @@ const handleTimelineClick = async(record) => {
     } else if (company === '中船') {
       zhongchuanData.value = JSON.parse(detailData.data);
       console.log('zhongchuanData: ',zhongchuanData.value)
-    } else {
+    } else if(company === '特变'){
       // 特变等其他公司
       rawStatsData.value = JSON.parse(detailData.data_huizong);
+    } else if(company === '德瑞斯'){
+      deruisiData.value = JSON.parse(detailData.data);
+    } else if(company === '沙钢'){
+      // 沙钢等其他公司
+      // rawStatsData.value = JSON.parse(detailData.data);
+    } else if(company === '朗度'){
+
+      langduData.value = JSON.parse(detailData.data);
+    } else if(company === '兴澄'){
+      // 沙钢等其他公司
+      // rawStatsData.value = JSON.parse(detailData.data_huizong);
     }
+
 
     // 显示统计对话框
     statsVisible.value = true;
@@ -322,6 +382,10 @@ const handleTimelineClick = async(record) => {
 const userAvatar = 'https://tdesign.gtimg.com/site/avatar.jpg';
 const zhongchuanData = ref(null); // 存储中船的数据
 const zhongchuanData_detail = ref(null);
+const deruisiData = ref(null); // 存储德瑞斯的数据
+const deruisiData_detail = ref(null);
+const langduData = ref(null); // 存储朗度的数据
+const langduData_detail = ref(null);
 const weiyuanData = ref(null); 
 const weiyuanData_detail = ref(null);
 const uploadRecords = ref([]);
@@ -426,7 +490,15 @@ const showStatistics = async (result) => {
     } else if (currentCompany.value === '中船') {
       zhongchuanData.value = result.summary; 
       zhongchuanData_detail.value = result.details;
-    } else {
+    } else if (currentCompany.value === '朗度'){
+      langduData.value = result.summary;
+      langduData_detail.value = result.details;
+
+    }else if (currentCompany.value === '德瑞斯'){
+      deruisiData.value = result.summary;
+      deruisiData_detail.value = result.details;
+
+    }else {
       const resolvedData = {};
       for (const [factory, promise] of Object.entries(result)) {
         try {
@@ -564,7 +636,39 @@ const beforeUpload = async(file) => {
           closeBtn: true, // 显示关闭按钮
         });
       }
+    } else if (currentCompany.value === '朗度') {
+      const result = await langdu(file);
+      console.log("PR--langdu:  ",result)
+      if (result.success) {
+        console.log('朗度数据:', result);
+        await showStatistics(result);
+        MessagePlugin.success('朗度数据Excel解析成功');
+      } else {
+        console.error('处理失败:', result);
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
+      }
     }
+    else if (currentCompany.value === '德瑞斯') {
+      const result = await deruisi(file);
+      // console.log("PR--deruisi:  ",result)
+      if (result.success) {
+        console.log('德瑞斯数据:', result);
+        await showStatistics(result);
+        MessagePlugin.success('德瑞斯数据Excel解析成功');
+      } else {
+        console.error('处理失败:', result);
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
+      }
+    }
+ 
 
     return true
   } catch (error) {
@@ -593,7 +697,21 @@ const up_extract_data = async () => {
           }
           dataToSend = zhongchuanData.value;
           dataToSendAll = zhongchuanData_detail.value;
-        } else {
+        } else if (currentCompany.value === '朗度') {
+          if (!langduData.value) {
+            MessagePlugin.warning('没有可提交的中船数据');
+            return;
+          }
+          dataToSend = langduData.value;
+          dataToSendAll = langduData_detail.value;
+        }else if (currentCompany.value === '德瑞斯') {
+          if (!deruisiData.value) {
+            MessagePlugin.warning('没有可提交的中船数据');
+            return;
+          }
+          dataToSend = deruisiData.value;
+          dataToSendAll = deruisiData_detail.value;
+        }else {
           // For other companies (特变 etc.)
           if (!statsData.value) {
             MessagePlugin.warning('没有可提交的数据');

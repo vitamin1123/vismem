@@ -23,7 +23,8 @@ async function processThirdSheet(workbook) {
     const requiredColumns = [
       '钢板牌号', '订厚(mm)', '订宽(mm)', '订长(mm)',
       '炼钢欠重', '轧制欠重', '中间库重量',
-      '成品重量', '准发重量', '合同欠重'
+      '成品重量', '准发重量', '合同欠重',
+      '月份', '码头'
     ];
   
     const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
@@ -42,7 +43,9 @@ async function processThirdSheet(workbook) {
       midStock: headerRow.indexOf('中间库重量'),
       productWeight: headerRow.indexOf('成品重量'),
       shippedWeight: headerRow.indexOf('准发重量'),
-      contractDeficit: headerRow.indexOf('合同欠重')
+      contractDeficit: headerRow.indexOf('合同欠重'),
+      month: headerRow.indexOf('月份'),
+      port: headerRow.indexOf('码头')
     };
   
     // 设置数据范围（从第二行开始）
@@ -87,22 +90,15 @@ async function processThirdSheet(workbook) {
         未轧制: rollingDeficit,
         未船检: midStock + rollingDeficit + productWeight - shippedWeight,
         未集港: contractDeficit,
-        未发运: contractDeficit
+        未发运: contractDeficit,
+        月份: row[colIndex.month] || '',
+        码头: row[colIndex.port] || ''
       });
     }
-    // for (var i = 0;i<result.length;i++){
-    //  if(result[i].规格描述 == '12*2150*10800'){
-    //     console.log(result[i])
-    //     break;
-    //  }
-
-
-
-    // }
-    // console.log(result[0])
     return result;
   }
-  async function processFirstSheet(workbook) {
+
+async function processFirstSheet(workbook) {
     // const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
@@ -124,7 +120,8 @@ async function processThirdSheet(workbook) {
       '炼钢在库量', '轧钢在库量', '精整在库量',
       '热处理在库量', '形合在库量', '材合在库量',
       '准发在库量（33）', '出厂在库量', '出厂未到码头量',
-      '总待交重量{订货量-已发货量（出厂码单）}'
+      '总待交重量{订货量-已发货量（出厂码单）}',
+      '月份', '到站港名称'
     ];
   
     const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
@@ -147,7 +144,9 @@ async function processThirdSheet(workbook) {
       shippingStock: headerRow.indexOf('准发在库量（33）'),
       factoryStock: headerRow.indexOf('出厂在库量'),
       wharfStock: headerRow.indexOf('出厂未到码头量'),
-      totalPending: headerRow.indexOf('总待交重量{订货量-已发货量（出厂码单）}')
+      totalPending: headerRow.indexOf('总待交重量{订货量-已发货量（出厂码单）}'),
+      month: headerRow.indexOf('月份'),
+      port: headerRow.indexOf('到站港名称')
     };
   
     // 设置数据范围（假设数据从第二行开始）
@@ -197,30 +196,22 @@ async function processThirdSheet(workbook) {
         未轧制: unrolled,
         未船检: uninspected,
         未集港: ungathered,
-        未发运: toNum(row[colIndex.totalPending])
+        未发运: toNum(row[colIndex.totalPending]),
+        月份: row[colIndex.month] || '',
+        到站港名称: row[colIndex.port] || ''
       });
     }
-    // for(var i = 0 ;i<result.length;i++){
-    // if(result[i]['规格描述'] == '10*2020*8560') {
-    //     console.log(result[i])
-    //     break;
-    // }
-    // }
-    // console.log('result', result[0])
     return result;
   }
 
-  function processExpression(expr) {
-
+function processExpression(expr) {
     var parts = expr.split('*');
     const firstPart = parseFloat(parts).toString(); // 核心修复点
     const restParts = parts.slice(1);
     return [firstPart, ...restParts].join('*');
-  }
+}
 
 async function readExcel(workbook) {
-  // const workbook = XLSX.readFile(filePath);
-  // const sheet = workbook.Sheets[workbook.SheetNames[1]];
   const sheet = workbook.Sheets[workbook.SheetNames[1]];
   const headerRow = [];
   let col = 0;
@@ -239,7 +230,9 @@ async function readExcel(workbook) {
     '合同生产状态',
     '准发净重量',
     '出厂重量（货权转移）',
-    '牌号'
+    '牌号',
+    '月份',
+    '码头'
   ];
   const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
   if (missingColumns.length > 0) {
@@ -251,49 +244,53 @@ async function readExcel(workbook) {
     status: headerRow.indexOf('合同生产状态'),
     netWeight: headerRow.indexOf('准发净重量'),
     shippedWeight: headerRow.indexOf('出厂重量（货权转移）'),
-    grade: headerRow.indexOf('牌号')
+    grade: headerRow.indexOf('牌号'),
+    month: headerRow.indexOf('月份'),
+    port: headerRow.indexOf('码头')
   };
-  console.log('colIndex', colIndex)
+
   const originalRange = XLSX.utils.decode_range(sheet['!ref']);
   originalRange.s.r = 1; // 0-based索引，第四行对应3
   sheet['!ref'] = XLSX.utils.encode_range(originalRange);
   const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-   // 处理数据逻辑
-   const result = [];
-   for (const row of jsonData) {
-     if (!row[colIndex.spec] || !row[colIndex.grade]) continue; // 跳过关键字段为空的行
- 
-     // 数值类型转换
-     const orderWeight = Number(row[colIndex.orderWeight]) || 0;
-     const netWeight = Number(row[colIndex.netWeight]) || 0;
-     const shippedWeight = Number(row[colIndex.shippedWeight]) || 0;
-     const status = String(row[colIndex.status]).trim();
- 
-     // 条件判断
-     const unsteeled = status === '41-[材料申请]有欠量' ? orderWeight : 0;
-     
-     const unrolled = ['41-[材料申请]有欠量', '43-[热轧]有欠量']
-       .includes(status) ? orderWeight : 0;
-     
-     const uninspected = (status.startsWith('5') && status.includes('[准发]有欠量')) || 
-       ['41-[材料申请]有欠量', '43-[热轧]有欠量'].includes(status) ? orderWeight : 0;
-     
-     const ungathered = netWeight - shippedWeight + uninspected;
-     
-     // 构建结果对象
-     result.push({
-       规格描述: processExpression(row[colIndex.spec]),
-       牌号: row[colIndex.grade],
-       未炼钢: unsteeled,
-       未轧制: unrolled,
-       未船检: uninspected,
-       未集港: ungathered < 0 ? 0 : ungathered, 
-       已发运: shippedWeight
-     });
-   }
-   
-//    console.log('result: ', result[0])
-   return result;
+  
+  // 处理数据逻辑
+  const result = [];
+  for (const row of jsonData) {
+    if (!row[colIndex.spec] || !row[colIndex.grade]) continue; // 跳过关键字段为空的行
+
+    // 数值类型转换
+    const orderWeight = Number(row[colIndex.orderWeight]) || 0;
+    const netWeight = Number(row[colIndex.netWeight]) || 0;
+    const shippedWeight = Number(row[colIndex.shippedWeight]) || 0;
+    const status = String(row[colIndex.status]).trim();
+
+    // 条件判断
+    const unsteeled = status === '41-[材料申请]有欠量' ? orderWeight : 0;
+    
+    const unrolled = ['41-[材料申请]有欠量', '43-[热轧]有欠量']
+      .includes(status) ? orderWeight : 0;
+    
+    const uninspected = (status.startsWith('5') && status.includes('[准发]有欠量')) || 
+      ['41-[材料申请]有欠量', '43-[热轧]有欠量'].includes(status) ? orderWeight : 0;
+    
+    const ungathered = netWeight - shippedWeight + uninspected;
+    
+    // 构建结果对象
+    result.push({
+      规格描述: processExpression(row[colIndex.spec]),
+      牌号: row[colIndex.grade],
+      未炼钢: unsteeled,
+      未轧制: unrolled,
+      未船检: uninspected,
+      未集港: ungathered < 0 ? 0 : ungathered, 
+      已发运: shippedWeight,
+      月份: row[colIndex.month] || '',
+      码头: row[colIndex.port] || ''
+    });
+  }
+  
+  return result;
 }
 
 // 转换金额字符串为数字
@@ -304,30 +301,6 @@ function parseAmount(amountStr) {
   throw new Error(`Invalid amount format: ${amountStr}`);
 }
 
-// 批量插入数据
-// async function insertData(data) {
-//   if (!data.length) {
-//     console.log("没有需要插入的数据");
-//     return;
-//   }
-
-//   const sqls = [];
-//   const params = [];
-
-//   // 构造 SQL 和参数
-//   data.forEach(({ model, price, version }) => {
-//     sqls.push("INSERT INTO baseprice (model, price, version) VALUES (?, ?, ?)");
-//     params.push([model, price, version]);
-//   });
-
-//   // 调用事务函数
-//   try {
-//     const results = await transaction(sqls, params);
-//     console.log("批量插入成功", results);
-//   } catch (err) {
-//     console.error("批量插入失败", err);
-//   }
-// }
 async function readExcelFile(file) {
   // 获取原生File对象（处理不同UI库的差异）
   const rawFile = file.raw || file;
@@ -352,6 +325,7 @@ async function readExcelFile(file) {
     reader.readAsArrayBuffer(rawFile);  // 确保传入原生File对象
   });
 }
+
 async function processSheet(workbook, sheetIndex) {
   try {
     const sheetName = workbook.SheetNames[sheetIndex];
@@ -369,20 +343,14 @@ async function processSheet(workbook, sheetIndex) {
 
 // 主函数
 export async function tebian(file) {
-    // const filePath = `C:/Users/xyy/Desktop/特变进度.xls`;
     try {
       const workbook = await readExcelFile(file);
-      // 并行执行三个sheet处理（假设处理函数是同步的）
-      // const [data1, data2, data3] = [
-      //   readExcel(filePath),
-      //   processFirstSheet(filePath),
-      //   processThirdSheet(filePath)
-      // ];
       const [data1, data2, data3] = await Promise.all([
         processSheet(workbook, 1), // 第二个sheet
         processSheet(workbook, 0), // 第一个sheet
         processSheet(workbook, 2)  // 第三个sheet
       ]);
+  
       // 错误收集逻辑
       const errorCollector = (data, sheetNum) => {
         if (!data?.message) return null;
@@ -401,7 +369,7 @@ export async function tebian(file) {
           message: `${errors.join('，')}，请检查excel文件结构是否符合要求` 
         };
       }
-      // console.log(data1[0])
+  
       // 返回最终数据结构
       return {
         '涟钢': data1,
@@ -414,6 +382,3 @@ export async function tebian(file) {
       return { message: `系统错误：${err.message}` };
     }
   }
-
-// 执行主函数
-// main();
