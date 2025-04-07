@@ -97,6 +97,27 @@
       </div>
     </div>
   </template>
+  <template v-else-if="currentCompany === '兴澄'">
+    <div class="stats-dialog">
+      <div v-if="xingchengData">
+        <div v-for="(stats, month) in xingchengData" :key="month" class="month-block">
+          <h3>{{ month }}月</h3>
+          <div class="dock-block">
+            <pre>
+已炼钢: {{ stats.已炼钢?.toFixed(3) || '0.000' }}吨
+已轧制: {{ stats.已轧制?.toFixed(3) || '0.000' }}吨
+已船检: {{ stats.已船检?.toFixed(3) || '0.000' }}吨
+已集港: {{ stats.已集港?.toFixed(3) || '0.000' }}吨
+已发运: {{ stats.已发运?.toFixed(3) || '0.000' }}吨
+            </pre>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <p>暂无数据</p>
+      </div>
+    </div>
+  </template>
   <!-- 特变数据模板（原模板） -->
   <template v-else>
     <div class="stats-dialog">
@@ -261,6 +282,7 @@ import { weiyuan } from './components/parse_weiyuan';
 import { langdu } from './components/parse_langdu';
 import { deruisi } from './components/parse_deruisi';
 import { zhongchuan } from './components/parse_zhongchuan';
+import { xingcheng } from './components/parse_xingcheng'
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'vue-router'
 import { HotTable } from '@handsontable/vue3';
@@ -359,6 +381,7 @@ const handleTimelineClick = async(record) => {
 
       langduData.value = JSON.parse(detailData.data);
     } else if(company === '兴澄'){
+      xingchengData.value = JSON.parse(detailData.data);
       // 沙钢等其他公司
       // rawStatsData.value = JSON.parse(detailData.data_huizong);
     }
@@ -389,6 +412,8 @@ const langduData_detail = ref(null);
 const weiyuanData = ref(null); 
 const weiyuanData_detail = ref(null);
 const uploadRecords = ref([]);
+const xingchengData = ref(null); 
+const xingchengData_detail = ref(null);
 
 const uploadConfig = ref({
   // action: 'https://chat.yzjship.com:8081/api/upload',
@@ -497,6 +522,10 @@ const showStatistics = async (result) => {
     }else if (currentCompany.value === '德瑞斯'){
       deruisiData.value = result.summary;
       deruisiData_detail.value = result.details;
+
+    }else if (currentCompany.value === '兴澄'){
+      xingchengData.value = result.summary;
+      xingchengData_detail.value = result.details;
 
     }else {
       const resolvedData = {};
@@ -668,6 +697,22 @@ const beforeUpload = async(file) => {
         });
       }
     }
+    else if (currentCompany.value === '兴澄') {
+      const result = await xingcheng(file);
+      console.log("PR--xingcheng:  ",result)
+      if (result.success) {
+        console.log('兴澄数据:', result);
+        await showStatistics(result);
+        MessagePlugin.success('兴澄数据Excel解析成功');
+      } else {
+        console.error('处理失败:', result);
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
+      }
+    }
  
 
     return true
@@ -699,18 +744,25 @@ const up_extract_data = async () => {
           dataToSendAll = zhongchuanData_detail.value;
         } else if (currentCompany.value === '朗度') {
           if (!langduData.value) {
-            MessagePlugin.warning('没有可提交的中船数据');
+            MessagePlugin.warning('没有可提交的朗度数据');
             return;
           }
           dataToSend = langduData.value;
           dataToSendAll = langduData_detail.value;
         }else if (currentCompany.value === '德瑞斯') {
           if (!deruisiData.value) {
-            MessagePlugin.warning('没有可提交的中船数据');
+            MessagePlugin.warning('没有可提交的德瑞斯数据');
             return;
           }
           dataToSend = deruisiData.value;
           dataToSendAll = deruisiData_detail.value;
+        }else if (currentCompany.value === '兴澄') {
+          if (!xingchengData.value) {
+            MessagePlugin.warning('没有可提交的兴澄数据');
+            return;
+          }
+          dataToSend = xingchengData.value;
+          dataToSendAll = xingchengData_detail.value;
         }else {
           // For other companies (特变 etc.)
           if (!statsData.value) {
