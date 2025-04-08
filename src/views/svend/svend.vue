@@ -118,6 +118,30 @@
       </div>
     </div>
   </template>
+  <template v-else-if="currentCompany === '三鼎'">
+  <div class="stats-dialog">
+    <div v-if="sandingData && sandingData.length > 0">
+      <!-- 按月份分组显示 -->
+      <div v-for="monthGroup in groupByMonth(sandingData)" :key="monthGroup.month" class="month-block">
+        <h3>{{ monthGroup.monthDisplay }}</h3>
+        <!-- 每个码头的统计数据 -->
+        <div v-for="item in monthGroup.items" :key="item.码头" class="dock-block">
+          <h4>{{ item.码头 }}码头</h4>
+          <pre>
+已炼钢: {{ item.已炼钢?.toFixed(3) || '0.000' }}吨
+已轧制: {{ item.已轧制?.toFixed(3) || '0.000' }}吨
+已船检: {{ item.已船检?.toFixed(3) || '0.000' }}吨
+已集港: {{ item.已集港?.toFixed(3) || '0.000' }}吨
+已发运: {{ item.已发运?.toFixed(3) || '0.000' }}吨
+          </pre>
+        </div>
+      </div>
+    </div>
+    <div v-else>
+      <p>暂无数据</p>
+    </div>
+  </div>
+</template>
   <!-- 特变数据模板（原模板） -->
   <template v-else>
     <div class="stats-dialog">
@@ -283,6 +307,7 @@ import { langdu } from './components/parse_langdu';
 import { deruisi } from './components/parse_deruisi';
 import { zhongchuan } from './components/parse_zhongchuan';
 import { xingcheng } from './components/parse_xingcheng'
+import { sanding } from './components/parse_sanding'
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'vue-router'
 import { HotTable } from '@handsontable/vue3';
@@ -293,7 +318,21 @@ import 'handsontable/dist/handsontable.full.min.css';
 // Register Handsontable modules
 registerAllModules();
 
-
+const groupByMonth = (data) => {
+  const groups = {};
+  data.forEach(item => {
+    const key = item.月份显示;
+    if (!groups[key]) {
+      groups[key] = {
+        month: item.月份,
+        monthDisplay: item.月份显示,
+        items: []
+      };
+    }
+    groups[key].items.push(item);
+  });
+  return Object.values(groups);
+};
 
 const upkey = ref(Date.now()); // 初始化为当前时间戳
 const authStore = useAuthStore()
@@ -382,8 +421,8 @@ const handleTimelineClick = async(record) => {
       langduData.value = JSON.parse(detailData.data);
     } else if(company === '兴澄'){
       xingchengData.value = JSON.parse(detailData.data);
-      // 沙钢等其他公司
-      // rawStatsData.value = JSON.parse(detailData.data_huizong);
+    } else if(company === '三鼎'){
+      sandingData.value = JSON.parse(detailData.data);
     }
 
 
@@ -414,6 +453,8 @@ const weiyuanData_detail = ref(null);
 const uploadRecords = ref([]);
 const xingchengData = ref(null); 
 const xingchengData_detail = ref(null);
+const sandingData = ref(null); 
+const sandingData_detail = ref(null);
 
 const uploadConfig = ref({
   // action: 'https://chat.yzjship.com:8081/api/upload',
@@ -526,6 +567,10 @@ const showStatistics = async (result) => {
     }else if (currentCompany.value === '兴澄'){
       xingchengData.value = result.summary;
       xingchengData_detail.value = result.details;
+
+    }else if (currentCompany.value === '三鼎'){
+      sandingData.value = result.summary;
+      sandingData_detail.value = result.details;
 
     }else {
       const resolvedData = {};
@@ -713,6 +758,22 @@ const beforeUpload = async(file) => {
         });
       }
     }
+    else if (currentCompany.value === '三鼎') {
+      const result = await sanding(file);
+      // console.log("PR--sanding:  ",result)
+      if (result.success) {
+        console.log('三鼎数据:', result);
+        await showStatistics(result);
+        MessagePlugin.success('三鼎数据Excel解析成功');
+      } else {
+        console.error('处理失败:', result);
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
+      }
+    }
  
 
     return true
@@ -763,6 +824,13 @@ const up_extract_data = async () => {
           }
           dataToSend = xingchengData.value;
           dataToSendAll = xingchengData_detail.value;
+        }else if (currentCompany.value === '三鼎') {
+          if (!sandingData.value) {
+            MessagePlugin.warning('没有可提交的三鼎数据');
+            return;
+          }
+          dataToSend = sandingData.value;
+          dataToSendAll = sandingData_detail.value;
         }else {
           // For other companies (特变 etc.)
           if (!statsData.value) {
