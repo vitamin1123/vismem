@@ -142,6 +142,30 @@
     </div>
   </div>
 </template>
+<template v-else-if="currentCompany === '沙钢'">
+  <div class="stats-dialog">
+    <div v-if="shagangData && shagangData.length > 0">
+      <!-- 按月份分组显示 -->
+      <div v-for="monthGroup in groupByMonth1(shagangData)" :key="monthGroup.month" class="month-block">
+        <h3>{{ monthGroup.monthDisplay }}</h3>
+        <!-- 每个码头的统计数据 -->
+        <div v-for="item in monthGroup.items" :key="item.码头" class="dock-block">
+          <h4>{{ item.码头 }}</h4>
+          <pre>
+已船检: {{ item.已船检?.toFixed(3) || '0.000' }}吨
+未集港: {{ item.未集港?.toFixed(3) || '0.000' }}吨
+已发运: {{ item.已发运?.toFixed(3) || '0.000' }}吨
+未炼钢: {{ item.未炼钢?.toFixed(3) || '0.000' }}吨
+未轧制: {{ item.未轧制?.toFixed(3) || '0.000' }}吨
+          </pre>
+        </div>
+      </div>
+    </div>
+    <div v-else>
+      <p>暂无数据</p>
+    </div>
+  </div>
+</template>
   <!-- 特变数据模板（原模板） -->
   <template v-else>
     <div class="stats-dialog">
@@ -308,6 +332,7 @@ import { deruisi } from './components/parse_deruisi';
 import { zhongchuan } from './components/parse_zhongchuan';
 import { xingcheng } from './components/parse_xingcheng'
 import { sanding } from './components/parse_sanding'
+import { shagang } from './components/parse_shagang'
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'vue-router'
 import { HotTable } from '@handsontable/vue3';
@@ -333,6 +358,21 @@ const groupByMonth = (data) => {
   });
   return Object.values(groups);
 };
+
+const groupByMonth1 = (data)=> {
+    const groups = {};
+    data.forEach(item => {
+      if (!groups[item.月份]) {
+        groups[item.月份] = {
+          month: item.月份,
+          monthDisplay: item.月份显示,
+          items: []
+        };
+      }
+      groups[item.月份].items.push(item);
+    });
+    return Object.values(groups);
+  }
 
 const upkey = ref(Date.now()); // 初始化为当前时间戳
 const authStore = useAuthStore()
@@ -415,7 +455,7 @@ const handleTimelineClick = async(record) => {
       deruisiData.value = JSON.parse(detailData.data);
     } else if(company === '沙钢'){
       // 沙钢等其他公司
-      // rawStatsData.value = JSON.parse(detailData.data);
+      shagangData.value = JSON.parse(detailData.data);
     } else if(company === '朗度'){
 
       langduData.value = JSON.parse(detailData.data);
@@ -455,6 +495,9 @@ const xingchengData = ref(null);
 const xingchengData_detail = ref(null);
 const sandingData = ref(null); 
 const sandingData_detail = ref(null);
+const shagangData = ref(null); 
+const shagangData_detail = ref(null);
+
 
 const uploadConfig = ref({
   // action: 'https://chat.yzjship.com:8081/api/upload',
@@ -571,6 +614,10 @@ const showStatistics = async (result) => {
     }else if (currentCompany.value === '三鼎'){
       sandingData.value = result.summary;
       sandingData_detail.value = result.details;
+
+    }else if (currentCompany.value === '沙钢'){
+      shagangData.value = result.summary;
+      shagangData_detail.value = result.details;
 
     }else {
       const resolvedData = {};
@@ -773,6 +820,21 @@ const beforeUpload = async(file) => {
           closeBtn: true, // 显示关闭按钮
         });
       }
+    }else if (currentCompany.value === '沙钢') {
+      const result = await shagang(file);
+      // console.log("PR--shagang:  ",result)
+      if (result.success) {
+        console.log('沙钢数据:', result);
+        await showStatistics(result);
+        MessagePlugin.success('沙钢数据Excel解析成功');
+      } else {
+        console.error('处理失败:', result);
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
+      }
     }
  
 
@@ -831,6 +893,13 @@ const up_extract_data = async () => {
           }
           dataToSend = sandingData.value;
           dataToSendAll = sandingData_detail.value;
+        }else if (currentCompany.value === '沙钢') {
+          if (!shagangData.value) {
+            MessagePlugin.warning('没有可提交的沙钢数据');
+            return;
+          }
+          dataToSend = shagangData.value;
+          dataToSendAll = shagangData_detail.value;
         }else {
           // For other companies (特变 etc.)
           if (!statsData.value) {
