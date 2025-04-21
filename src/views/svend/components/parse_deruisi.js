@@ -97,14 +97,14 @@ export async function deruisi(file) {
 
     // 构建列索引（增强验证）
     const colIndex = {};
-    let allColumnsValid = true;
+    const missingColumns = [];
     
     console.log('===== 列匹配验证 =====');
     for (const [colName, fullPath] of Object.entries(targetColumns)) {
       const col = columns.find(c => c.fullPath === fullPath);
       if (!col) {
+        missingColumns.push({ name: colName, path: fullPath });
         console.error(`❌ 列缺失: ${colName.padEnd(6)} -> ${fullPath}`);
-        allColumnsValid = false;
         continue;
       }
       colIndex[colName] = col.index;
@@ -114,8 +114,13 @@ export async function deruisi(file) {
       console.log(`✅ ${colName.padEnd(6)} -> 列${col.index} | 首行值: ${testCell ? testCell.v : '空'}`);
     }
 
-    if (!allColumnsValid) {
-      throw new Error('存在未匹配的列，请检查表头定义');
+    if (missingColumns.length > 0) {
+      // 构建详细的错误信息
+      const errorDetails = missingColumns.map(m => 
+        `- ${m.name}: 未找到路径 "${m.path}"`
+      ).join('\n');
+      
+      throw new Error(`以下列未匹配:\n${errorDetails}\n\n请检查Excel表头是否包含这些列，或路径定义是否正确`);
     }
 
     // 必要列二次验证
@@ -247,7 +252,7 @@ export async function deruisi(file) {
     console.error('处理失败:', error);
     return {
       success: false,
-      message: `处理失败: ${error.message}`,
+      message: error.message,
       error: error.stack
     };
   }
