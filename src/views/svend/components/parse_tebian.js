@@ -21,7 +21,7 @@ async function processThirdSheet(workbook) {
   
     // 检查必须存在的列
     const requiredColumns = [
-      '钢板牌号', '订厚(mm)', '订宽(mm)', '订长(mm)',
+      '钢板牌号', '订厚(mm)', '订宽(mm)', '订长(mm)', '订货重量',
       '炼钢欠重', '轧制欠重', '中间库重量',
       '成品重量', '准发重量', '合同欠重',
       '月份', '码头'
@@ -38,6 +38,7 @@ async function processThirdSheet(workbook) {
       thickness: headerRow.indexOf('订厚(mm)'),
       width: headerRow.indexOf('订宽(mm)'),
       length: headerRow.indexOf('订长(mm)'),
+      orderWeight: headerRow.indexOf('订货重量'),
       steelDeficit: headerRow.indexOf('炼钢欠重'),
       rollingDeficit: headerRow.indexOf('轧制欠重'),
       midStock: headerRow.indexOf('中间库重量'),
@@ -58,6 +59,8 @@ async function processThirdSheet(workbook) {
   
     // 处理数据逻辑
     const result = [];
+    let totalOrderWeight = 0; // 订货重量总计
+    
     for (const row of jsonData) {
       // 跳过无效行（钢板牌号为空）
       if (!row[colIndex.grade]) continue;
@@ -69,12 +72,15 @@ async function processThirdSheet(workbook) {
       };
   
       // 基础数值
+      const orderWeight = toNum(row[colIndex.orderWeight]);
       const steelDeficit = toNum(row[colIndex.steelDeficit]);
       const rollingDeficit = toNum(row[colIndex.rollingDeficit]);
       const midStock = toNum(row[colIndex.midStock]);
       const productWeight = toNum(row[colIndex.productWeight]);
       const shippedWeight = toNum(row[colIndex.shippedWeight]);
       const contractDeficit = toNum(row[colIndex.contractDeficit]);
+      
+      totalOrderWeight += orderWeight; // 累加订货重量
   
       // 规格描述拼接（去掉单位保留纯数字）
       const thickness = toNum(row[colIndex.thickness]);
@@ -86,6 +92,7 @@ async function processThirdSheet(workbook) {
       result.push({
         规格描述: specDesc,
         牌号: row[colIndex.grade],
+        订货重量: orderWeight,
         未炼钢: steelDeficit,
         未轧制: rollingDeficit,
         未船检: midStock + rollingDeficit + productWeight - shippedWeight,
@@ -95,11 +102,17 @@ async function processThirdSheet(workbook) {
         码头: row[colIndex.port] || ''
       });
     }
-    return result;
+    
+    // 返回结果和统计信息
+    return {
+      data: result,
+      statistics: {
+        订货重量总计: totalOrderWeight
+      }
+    };
   }
 
-async function processFirstSheet(workbook) {
-    // const workbook = XLSX.readFile(filePath);
+  async function processFirstSheet(workbook) {
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
   
@@ -114,9 +127,9 @@ async function processFirstSheet(workbook) {
       col++;
     }
   
-    // 检查必须存在的列
+    // 检查必须存在的列 - 添加"原料申请欠量"
     const requiredColumns = [
-      '标准牌号', '厚度', '宽度', '长度',
+      '标准牌号', '厚度', '宽度', '长度', '订货重量', '原料申请欠量',
       '炼钢在库量', '轧钢在库量', '精整在库量',
       '热处理在库量', '形合在库量', '材合在库量',
       '准发在库量（33）', '出厂在库量', '出厂未到码头量',
@@ -129,12 +142,14 @@ async function processFirstSheet(workbook) {
       return { message: `${missingColumns.join(',')}列不存在，请检查` };
     }
   
-    // 建立列索引映射
+    // 建立列索引映射 - 添加"materialApplyDeficit"
     const colIndex = {
       grade: headerRow.indexOf('标准牌号'),
       thickness: headerRow.indexOf('厚度'),
       width: headerRow.indexOf('宽度'),
       length: headerRow.indexOf('长度'),
+      orderWeight: headerRow.indexOf('订货重量'),
+      materialApplyDeficit: headerRow.indexOf('原料申请欠量'), // 新增列
       steelStock: headerRow.indexOf('炼钢在库量'),
       rollingStock: headerRow.indexOf('轧钢在库量'),
       finishingStock: headerRow.indexOf('精整在库量'),
@@ -149,9 +164,9 @@ async function processFirstSheet(workbook) {
       port: headerRow.indexOf('到站港名称')
     };
   
-    // 设置数据范围（假设数据从第二行开始）
+    // 设置数据范围
     const originalRange = XLSX.utils.decode_range(sheet['!ref']);
-    originalRange.s.r = 1; // 0-based索引，第二行开始
+    originalRange.s.r = 1;
     sheet['!ref'] = XLSX.utils.encode_range(originalRange);
   
     // 转换数据
@@ -159,14 +174,17 @@ async function processFirstSheet(workbook) {
   
     // 处理数据逻辑
     const result = [];
+    let totalOrderWeight = 0;
+    let totalMaterialApplyDeficit = 0; // 原料申请欠量总计
+    
     for (const row of jsonData) {
-      // 跳过空行
       if (!row[colIndex.grade]) continue;
   
-      // 数值转换
       const toNum = (val) => Math.max(Number(val) || 0, 0);
       
-      // 基础数值
+      // 基础数值 - 添加原料申请欠量
+      const orderWeight = toNum(row[colIndex.orderWeight]);
+      const materialApplyDeficit = toNum(row[colIndex.materialApplyDeficit]); // 新增
       const steel = toNum(row[colIndex.steelStock]);
       const rolling = toNum(row[colIndex.rollingStock]);
       const finishing = toNum(row[colIndex.finishingStock]);
@@ -176,14 +194,17 @@ async function processFirstSheet(workbook) {
       const shipping = toNum(row[colIndex.shippingStock]);
       const factory = toNum(row[colIndex.factoryStock]);
       const wharf = toNum(row[colIndex.wharfStock]);
-  
-      // 计算逻辑
-      const unsteeled = steel;
-      const unrolled = steel + rolling;
+      
+      totalOrderWeight += orderWeight;
+      totalMaterialApplyDeficit += materialApplyDeficit; // 累加
+      
+      // 修改计算逻辑 - 使用原料申请欠量作为未炼钢
+      const unsteeled = materialApplyDeficit; // 改为使用原料申请欠量
+      const unrolled = unsteeled + rolling;
       const uninspected = unrolled + finishing + heatTreatment + shape + material;
       const ungathered = uninspected + shipping + factory + wharf;
   
-      // 规格描述拼接
+      // 规格描述
       const thickness = toNum(row[colIndex.thickness]);
       const width = toNum(row[colIndex.width]);
       const length = toNum(row[colIndex.length]);
@@ -192,6 +213,8 @@ async function processFirstSheet(workbook) {
       result.push({
         规格描述: specDesc,
         牌号: row[colIndex.grade],
+        订货重量: orderWeight,
+        原料申请欠量: materialApplyDeficit, // 新增字段
         未炼钢: unsteeled,
         未轧制: unrolled,
         未船检: uninspected,
@@ -201,7 +224,14 @@ async function processFirstSheet(workbook) {
         到站港名称: row[colIndex.port] || ''
       });
     }
-    return result;
+    
+    return {
+      data: result,
+      statistics: {
+        订货重量总计: totalOrderWeight,
+        原料申请欠量总计: totalMaterialApplyDeficit // 新增统计
+      }
+    };
   }
 
 function processExpression(expr) {
@@ -223,7 +253,7 @@ async function readExcel(workbook) {
     col++;
   }
 
-  // 检查必须存在的列
+  // 检查必须存在的列 - 修改为带"过滤"前缀的列名
   const requiredColumns = [
     '过滤规格描述',
     '过滤订货重量(吨)',
@@ -234,36 +264,44 @@ async function readExcel(workbook) {
     '月份',
     '码头'
   ];
+  
   const missingColumns = requiredColumns.filter(col => !headerRow.includes(col));
   if (missingColumns.length > 0) {
     return { message: `${missingColumns.join(',')}列不存在，请检查` };
   }
+
+  // 列索引映射 - 修改为带"过滤"前缀的列名
   const colIndex = {
-    spec: headerRow.indexOf('规格描述'),
-    orderWeight: headerRow.indexOf('订货重量(吨)'),
-    status: headerRow.indexOf('合同生产状态'),
-    netWeight: headerRow.indexOf('准发净重量'),
-    shippedWeight: headerRow.indexOf('出厂重量（货权转移）'),
-    grade: headerRow.indexOf('牌号'),
+    spec: headerRow.indexOf('过滤规格描述'),
+    orderWeight: headerRow.indexOf('过滤订货重量(吨)'),
+    status: headerRow.indexOf('过滤合同生产状态'),
+    netWeight: headerRow.indexOf('过滤准发净重量'),
+    shippedWeight: headerRow.indexOf('过滤出厂重量（货权转移）'),
+    grade: headerRow.indexOf('过滤牌号'),
     month: headerRow.indexOf('月份'),
     port: headerRow.indexOf('码头')
   };
 
   const originalRange = XLSX.utils.decode_range(sheet['!ref']);
-  originalRange.s.r = 1; // 0-based索引，第四行对应3
+  originalRange.s.r = 1; // 0-based索引，从第二行开始
   sheet['!ref'] = XLSX.utils.encode_range(originalRange);
   const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
   
   // 处理数据逻辑
   const result = [];
+  let totalOrderWeight = 0;
+  
   for (const row of jsonData) {
-    if (!row[colIndex.spec] || !row[colIndex.grade]) continue; // 跳过关键字段为空的行
+    // 修改判断条件，使用带"过滤"前缀的列索引
+    if (!row[colIndex.spec] || !row[colIndex.grade]) continue;
 
     // 数值类型转换
     const orderWeight = Number(row[colIndex.orderWeight]) || 0;
     const netWeight = Number(row[colIndex.netWeight]) || 0;
     const shippedWeight = Number(row[colIndex.shippedWeight]) || 0;
     const status = String(row[colIndex.status]).trim();
+    
+    totalOrderWeight += orderWeight;
 
     // 条件判断
     const unsteeled = status === '41-[材料申请]有欠量' ? orderWeight : 0;
@@ -280,6 +318,7 @@ async function readExcel(workbook) {
     result.push({
       规格描述: processExpression(row[colIndex.spec]),
       牌号: row[colIndex.grade],
+      订货重量: orderWeight,
       未炼钢: unsteeled,
       未轧制: unrolled,
       未船检: uninspected,
@@ -290,7 +329,12 @@ async function readExcel(workbook) {
     });
   }
   
-  return result;
+  return {
+    data: result,
+    statistics: {
+      订货重量总计: totalOrderWeight
+    }
+  };
 }
 
 // 转换金额字符串为数字
@@ -372,9 +416,12 @@ export async function tebian(file) {
   
       // 返回最终数据结构
       return {
-        '涟钢': data1,
-        '湘钢': data2,
-        '首钢': data3
+        '涟钢': data1.data || data1,
+        '涟钢统计': data1.statistics,
+        '湘钢': data2.data || data2,
+        '湘钢统计': data2.statistics,
+        '首钢': data3.data || data3,
+        '首钢统计': data3.statistics
       };
   
     } catch (err) {
