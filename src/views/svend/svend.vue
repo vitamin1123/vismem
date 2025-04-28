@@ -15,7 +15,7 @@
         <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
           <h4>{{ dock }}码头</h4>
           <pre>
-已发货量: {{ stats.已发货量?.toFixed(3) || '0.0' }}吨
+已发货量: {{ stats.已发运?.toFixed(3) || '0.0' }}吨
 已炼钢: {{ stats.已炼钢?.toFixed(3) || '0.0' }}吨
 已轧制: {{ stats.已轧制?.toFixed(3) || '0.0' }}吨
 已船检: {{ stats.已船检?.toFixed(3) || '0.0' }}吨

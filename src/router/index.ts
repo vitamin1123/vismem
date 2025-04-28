@@ -4,18 +4,125 @@ import Result404 from '@/views/NotFound404View/NotFound404View.vue'
 import SvendView from '@/views/svend/svend.vue'
 import loginView from '@/views/login/login.vue'
 import VisMemView from '@/views/VisMemView/VisMem.vue'
+import Anbao from '@/views/anbao/anbao.vue'
+import selfToolList from '@/views/anbao/detail/self-tool-list.vue'
+import dutyRecord from '@/views/anbao/detail/duty-record.vue'
+import meetingRecord from '@/views/anbao/detail/meeting-record.vue'
+import reWeigh from '@/views/anbao/detail/re-weigh.vue'
+import shipRegister from '@/views/anbao/detail/ship-register.vue'
+import customsRecord from '@/views/anbao/detail/customs-record.vue'
+import securityCheck from '@/views/anbao/detail/security-check.vue'
+import guest from '@/views/anbao/detail/guest.vue'
+import guest_car from '@/views/anbao/detail/guest_car.vue'
+import xunluo from '@/views/anbao/detail/xunluo.vue'
+
+
 import { useAuthStore } from '@/store/authStore'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-
+    // { title: '进厂自备工具清单', path: '/self-tool-list', icon: 'todo-list-o' },
+    // { title: '值班记录', path: '/duty-record', icon: 'notes-o' },
+    // { title: '班前会记录', path: '/meeting-record', icon: 'comment-o' },
+    // { title: '物资出场重新过磅', path: '/re-weigh', icon: 'balance-list-o' },
+    // { title: '外来船舶登记', path: '/ship-register', icon: 'font-o' },
+    // { title: '海关监管场所台账', path: '/customs-record', icon: 'records-o' },
+    // { title: '治安保卫检查整改', path: '/security-check', icon: 'shield-o' },
+    {
+      path: '/meeting-record',
+      name: 'meeting-record',
+      component: meetingRecord,
+      meta: {
+        title: '班前会记录' // 自定义标题
+      }
+    },
+    {
+      path: '/guest',
+      name: 'guest',
+      component: guest,
+      meta: {
+        title: '外来人员登记' // 自定义标题
+      }
+    },
+    {
+      path: '/guest_car',
+      name: 'guest_car',
+      component: guest_car,
+      meta: {
+        title: '外来车辆登记' // 自定义标题
+      }
+    },
+    {
+      path: '/xunluo',
+      name: 'xunluo',
+      component: xunluo,
+      meta: {
+        title: '巡逻' // 自定义标题
+      }
+    },
+    {
+      path: '/re-weigh',
+      name: 're-weigh',
+      component: reWeigh,
+      meta: {
+        title: '物资出场重新过磅' // 自定义标题
+      }
+    },
+    {
+      path: '/ship-register',
+      name: 'ship-register',
+      component: shipRegister,
+      meta: {
+        title: '外来船舶登记' // 自定义标题
+      }
+    },
+    {
+      path: '/customs-record',
+      name: 'customs-record',
+      component: customsRecord,
+      meta: {
+        title: '海关监管场所台账' // 自定义标题
+      }
+    },
+    {
+      path: '/security-check',
+      name: 'security-check',
+      component: securityCheck,
+      meta: {
+        title: '治安保卫检查整改' // 自定义标题
+      }
+    },
+    {
+      path: '/duty-record',
+      name: 'duty-record',
+      component: dutyRecord,
+      meta: {
+        title: '值班记录' // 自定义标题
+      }
+    },
+    {
+      path: '/self-tool-list',
+      name: 'self-tool-list',
+      component: selfToolList,
+      meta: {
+        title: '进厂自备工具清单' // 自定义标题
+      }
+    },
     {
       path: '/404',
       name: '404',
       component: Result404,
       meta: {
         title: '404' // 自定义标题
+      }
+    },
+    {
+      path: '/anbao',
+      name: 'anbao',
+      component: Anbao,
+      meta: {
+        title: '安保平台' // 自定义标题
       }
     },
     {
