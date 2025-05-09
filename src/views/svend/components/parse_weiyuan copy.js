@@ -35,7 +35,7 @@ async function processSheet(workbook) {
     const requiredColumns = [
       '合同编号', '已发货量', '已炼钢', 
       '已轧钢', '已船检', '已集港', '码头',
-      '订单钢种', '订单厚度', '订单宽度', '订单长度' // 新增必要列
+      '订单钢种', '订单厚度', '订单宽度', '订单长度', '单重', '已发运' // 新增'单重'列
     ];
     
     const { missingColumns, colIndex } = validateHeaders(headerRow, requiredColumns);
@@ -69,13 +69,18 @@ function processData(sheet, colIndex) {
     const width = row[colIndex['订单宽度']] || '';
     const length = row[colIndex['订单长度']] || '';
     const specDescription = `${thickness}*${width}*${length}`;
+    
+    // 计算已发运 = 单重 * 已发货量
+    const unitWeight = Number(row[colIndex['单重']]) || 0;
+    const shippedQuantity = Number(row[colIndex['已发货量']]) || 0;
+    const shippedWeight = unitWeight * shippedQuantity;
 
     // 提取明细数据
     const detailItem = {
       合同编号: row[colIndex['合同编号']],
       订单钢种: row[colIndex['订单钢种']] || '',
-      规格描述: specDescription, // 新增规格描述字段
-      已发货量: Math.max(Number(row[colIndex['已发货量']])) || 0,
+      规格描述: specDescription,
+      已发运: shippedWeight, // 修改为计算后的值
       已炼钢: Math.max(Number(row[colIndex['已炼钢']])) || 0,
       已轧制: Math.max(Number(row[colIndex['已轧钢']])) || 0,
       已船检: Math.max(Number(row[colIndex['已船检']])) || 0,
@@ -95,7 +100,7 @@ function processData(sheet, colIndex) {
     if (!aggregatedData[month]) aggregatedData[month] = {};
     if (!aggregatedData[month][dock]) {
       aggregatedData[month][dock] = {
-        已发货量: 0,
+        已发运: 0, // 修改字段名
         已炼钢: 0,
         已轧制: 0,
         已船检: 0,
@@ -105,7 +110,7 @@ function processData(sheet, colIndex) {
 
     // 累加聚合数据
     const target = aggregatedData[month][dock];
-    target.已发货量 += detailItem.已发货量;
+    target.已发运 += detailItem.已发运; // 使用计算后的值
     target.已炼钢 += detailItem.已炼钢;
     target.已轧制 += detailItem.已轧制;
     target.已船检 += detailItem.已船检;

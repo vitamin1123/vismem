@@ -123,15 +123,15 @@
       <van-form @submit="saveApprovalSettings" class="approval-form">
         <van-cell-group inset>
           <van-field
-            v-model="approvalSettings.starter"
+            v-model="approvalSettings.starterText"
             label="发起人"
             placeholder="请选择发起人"
             is-link
             readonly
-            @click="showStarterPicker = true"
+            @click="showUserPicker('starter')"
           />
           
-          <div v-for="(item, index) in approvalSettings.approvers" :key="index" class="approval-item">
+          <div v-for="(item, index) in approvalSettings.nodes" :key="index" class="approval-item">
             <div class="approval-row">
               <div class="approval-controls">
                 <van-icon name="minus" size="16" color="#ee0a24" @click="removeApprover(index)" />
@@ -143,12 +143,12 @@
                 />
               </div>
               <van-field
-                v-model="item.name"
+                v-model="item.usersText"
                 label="人员"
                 placeholder="请选择人员"
                 readonly
                 is-link
-                @click="showApproverPicker(index)"
+                @click="showUserPicker('node', index)"
               />
             </div>
           </div>
@@ -169,51 +169,45 @@
         />
       </van-popup>
       
-      <!-- 人员选择器 -->
-      <van-popup v-model:show="showApproverSelect" position="bottom">
-        <van-picker
-          :columns="userColumns"
-          @confirm="onApproverConfirm"
-          @cancel="showApproverSelect = false"
-        />
-      </van-popup>
-      
-      <!-- 发起人选择器 -->
-      <van-popup v-model:show="showStarterPicker" position="bottom" round>
+      <!-- 用户选择器 (共用) -->
+      <van-popup v-model:show="showUserSelect" position="bottom" round>
+      <div class="search-container">
         <van-search
           v-model="searchText"
           placeholder="请输入搜索内容"
+          class="search-input"
         />
-        <van-button type="primary" size="small" @click="fetchUsers">搜索</van-button>
-        <van-checkbox-group v-model="selectedUsers">
-          <van-cell-group>
-            <van-cell
-              v-for="user in userList"
-              :key="user.value"
-              clickable
-              @click="toggleUser(user)"
-            >
-              <template #title>
-                <van-checkbox :name="user.value">
-                  {{ user.text }}
-                </van-checkbox>
-              </template>
-            </van-cell>
-          </van-cell-group>
-        </van-checkbox-group>
-        <div class="button-group">
-          <van-button type="primary" size="small" @click="confirmSelection">确定</van-button>
-        </div>
-      </van-popup>
+        <van-button type="primary" size="small" @click="fetchUsers" class="search-button">搜索</van-button>
+      </div>
+      <van-checkbox-group v-model="currentSelectedUsers">
+        <van-cell-group>
+          <van-cell
+            v-for="user in userList"
+            :key="user.value"
+            clickable
+            :title="user.text"
+            @click="toggleUser(user)"
+          >
+            <template #right-icon>
+              <van-checkbox :name="user.value" @click.stop />
+            </template>
+          </van-cell>
+        </van-cell-group>
+      </van-checkbox-group>
+      <div class="button-group">
+        <van-button type="primary" size="small" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</van-button>
+        <van-button type="primary" size="small" @click="confirmUserSelection">确定</van-button>
+      </div>
+    </van-popup>
     </div>
   </template>
   
   <script setup>
-  import { ref, reactive } from 'vue';
+  import { ref, reactive, computed } from 'vue';
   import { showToast } from 'vant';
   import { useAuthStore } from '@/store/authStore'
-import apiClient from '@/plugins/axios'
-const user = useAuthStore();
+  import apiClient from '@/plugins/axios'
+  const user = useAuthStore();
   
   // 当前激活的标签页
   const activeTab = ref(0);
@@ -333,8 +327,9 @@ const user = useAuthStore();
   
   // 审批设置页面数据
   const approvalSettings = reactive({
-    starter: '',
-    approvers: []
+    starter: [],
+    starterText: '',
+    nodes: []
   });
   
   const typeColumns = [
@@ -342,61 +337,113 @@ const user = useAuthStore();
     { text: '知会', value: 'notify' }
   ];
   
+  // 用户选择相关
   const searchText = ref('');
-const userList = ref([]);
-const selectedUsers = ref([]);
-const userColumns = ref([]);
-
-const fetchUsers = async () => {
-  try {
-    const response = await apiClient.post('/api/get_anbao_user', {
-      sw: searchText.value
-    });
-    if (response.data.code === 0) {
-      userList.value = response.data.data.map(user => ({
-        text: `${user.postname} - ${user.name}`,
-        value: user.code
-      }));
-    } else {
+  const userList = ref([]);
+  const currentSelectedUsers = ref([]);
+  const showUserSelect = ref(false);
+  const currentSelectionType = ref(''); // 'starter' or 'node'
+  const currentSelectionIndex = ref(-1); // for nodes
+  
+  const fetchUsers = async () => {
+    try {
+      const response = await apiClient.post('/api/get_anbao_user', {
+        sw: searchText.value
+      });
+      if (response.data.code === 0) {
+        userList.value = response.data.data.map(user => ({
+          text: `${user.postname} - ${user.name}`,
+          value: user.code
+        }));
+      } else {
+        showToast('获取用户列表失败');
+      }
+    } catch (error) {
       showToast('获取用户列表失败');
     }
-  } catch (error) {
-    showToast('获取用户列表失败');
-  }
-};
-
-const toggleUser = (user) => {
-  const index = selectedUsers.value.indexOf(user.value);
-  if (index === -1) {
-    selectedUsers.value.push(user.value);
-  } else {
-    selectedUsers.value.splice(index, 1);
-  }
-};
-
-const confirmSelection = () => {
-  const selectedNames = userList.value
-    .filter(user => selectedUsers.value.includes(user.value))
-    .map(user => user.text.split(' - ')[1]);
+  };
+  
+  const toggleUser = (user) => {
+    const index = currentSelectedUsers.value.indexOf(user.value);
+    if (index === -1) {
+        currentSelectedUsers.value.push(user.value);
+    } else {
+        currentSelectedUsers.value.splice(index, 1);
+    }
+  };
+  
+  const showUserPicker = (type, index = -1) => {
+    currentSelectionType.value = type;
+    currentSelectionIndex.value = index;
     
-  approvalSettings.starter = selectedNames.join(',');
-  showStarterPicker.value = false;
-};
+    // 设置当前已选中的用户
+    if (type === 'starter') {
+      currentSelectedUsers.value = [...approvalSettings.starter];
+    } else if (type === 'node' && index >= 0) {
+      currentSelectedUsers.value = [...approvalSettings.nodes[index].users];
+    } else {
+      currentSelectedUsers.value = [];
+    }
+    
+    // 如果已经有搜索过的用户列表，直接显示
+    if (userList.value.length > 0) {
+      showUserSelect.value = true;
+    } else {
+      // 否则先获取用户列表
+      fetchUsers().then(() => {
+        showUserSelect.value = true;
+      });
+    }
+  };
+  
+  const isAllSelected = ref(false);
+  
+  const toggleSelectAll = () => {
+    isAllSelected.value = !isAllSelected.value;
+    if (isAllSelected.value) {
+      currentSelectedUsers.value = userList.value.map(user => user.value);
+    } else {
+      currentSelectedUsers.value = [];
+    }
+  };
+  
+  const confirmUserSelection = () => {
+    const selectedUsers = userList.value
+      .filter(user => currentSelectedUsers.value.includes(user.value));
+    
+    const selectedText = selectedUsers.map(u => u.text.split(' - ')[1]).join(',');
+    
+    if (currentSelectionType.value === 'starter') {
+      approvalSettings.starter = [...currentSelectedUsers.value];
+      approvalSettings.starterText = selectedText;
+    } else if (currentSelectionType.value === 'node' && currentSelectionIndex.value >= 0) {
+      approvalSettings.nodes[currentSelectionIndex.value].users = [...currentSelectedUsers.value];
+      approvalSettings.nodes[currentSelectionIndex.value].usersText = selectedText;
+    }
+    
+    showUserSelect.value = false;
+    
+    // 人员变动后自动提交审批设置
+    submitApprovalSettings();
+  };
   
   const showTypeSelect = ref(false);
-  const showApproverSelect = ref(false);
-  const showStarterPicker = ref(false);
   let currentApproverIndex = 0;
   
   const addApprover = () => {
-    approvalSettings.approvers.push({
+    approvalSettings.nodes.push({
       type: 'approve',
-      name: ''
+      users: [],
+      usersText: ''
     });
+    
+    // 添加审批人后自动提交审批设置
+    submitApprovalSettings();
   };
   
   const removeApprover = (index) => {
-    approvalSettings.approvers.splice(index, 1);
+    approvalSettings.nodes.splice(index, 1);
+    submitApprovalSettings();
   };
   
   const showTypePicker = (index) => {
@@ -404,27 +451,36 @@ const confirmSelection = () => {
     showTypeSelect.value = true;
   };
   
-  const showApproverPicker = (index) => {
-    currentApproverIndex = index;
-    showApproverSelect.value = true;
-  };
-  
   const onTypeConfirm = ({ selectedOptions }) => {
-    approvalSettings.approvers[currentApproverIndex].type = selectedOptions[0].value;
+    approvalSettings.nodes[currentApproverIndex].type = selectedOptions[0].value;
     showTypeSelect.value = false;
   };
   
-  const onApproverConfirm = ({ selectedOptions }) => {
-    approvalSettings.approvers[currentApproverIndex].name = selectedOptions[0].value;
-    showApproverSelect.value = false;
+  const submitApprovalSettings = async () => {
+    try {
+      const saveData = {
+        starter: approvalSettings.starter,
+        nodes: approvalSettings.nodes.map(node => ({
+          type: node.type,
+          users: node.users
+        })),
+        formtype: 'selftool'
+      };
+      
+      const response = await apiClient.post('/api/save_approval_settings', saveData);
+      if (response.data.code === 0) {
+        console.log('审批设置已保存:', saveData);
+      } else {
+        showToast('保存审批设置失败');
+      }
+    } catch (error) {
+      showToast('保存审批设置失败');
+    }
   };
   
-  const onStarterConfirm = () => {
-  // 保留方法兼容性
-};
-  
   const saveApprovalSettings = () => {
-    showToast('审批设置已保存');
+    approvalSettings.formtype = 'selftool';
+    submitApprovalSettings();
   };
   </script>
   
@@ -530,4 +586,28 @@ const confirmSelection = () => {
     flex: 1;
     margin-left: 0;
   }
+  
+  .search-container {
+    display: flex;
+    padding: 10px;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .search-input {
+    flex: 1;
+  }
+  
+  .search-button {
+    flex-shrink: 0;
+  }
+
+  .van-cell {
+  display: flex;
+  align-items: center;
+}
+
+.van-checkbox {
+  margin-left: 8px;
+}
   </style>
