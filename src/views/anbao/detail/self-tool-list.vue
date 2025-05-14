@@ -203,7 +203,41 @@
   </template>
   
   <script setup>
-  import { ref, reactive, computed } from 'vue';
+  // 在现有导入中添加onMounted
+  import { ref, reactive, computed, onMounted } from 'vue';
+  
+  // 在setup脚本末尾添加新的生命周期钩子
+  onMounted(async () => {
+  await fetchUsers();
+  await fetchApprovalSettings();
+  });
+  
+  // 添加获取审批配置方法
+  const fetchApprovalSettings = async () => {
+  try {
+  const response = await apiClient.post('/api/get_approval_settings', {
+  form: 'selftool'
+  });
+  
+  if (response.data.code === 0 && response.data.data?.audit_json) {
+  const auditData = JSON.parse(response.data.data.audit_json);
+  approvalSettings.starter = auditData.starter;
+  approvalSettings.starterText = userList.value
+  .find(u => auditData.starter.includes(u.value))?.text.split(' - ')[1] || '';
+  
+  approvalSettings.nodes = auditData.nodes.map(node => ({
+  type: node.type,
+  users: node.users,
+  usersText: userList.value
+  .filter(u => node.users.includes(u.value))
+  .map(u => u.text.split(' - ')[1])
+  .join(',')
+  }));
+  }
+  } catch (error) {
+  showToast('获取审批配置失败');
+  }
+  };
   import { showToast } from 'vant';
   import { useAuthStore } from '@/store/authStore'
   import apiClient from '@/plugins/axios'
@@ -459,12 +493,14 @@
   const submitApprovalSettings = async () => {
     try {
       const saveData = {
-        starter: approvalSettings.starter,
-        nodes: approvalSettings.nodes.map(node => ({
-          type: node.type,
-          users: node.users
-        })),
-        formtype: 'selftool'
+        form: 'selftool',
+        audit_json: JSON.stringify({
+          starter: approvalSettings.starter,
+          nodes: approvalSettings.nodes.map(node => ({
+            type: node.type,
+            users: node.users
+          }))
+        })
       };
       
       const response = await apiClient.post('/api/save_approval_settings', saveData);
