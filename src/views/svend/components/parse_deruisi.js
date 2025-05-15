@@ -255,20 +255,26 @@ function processSheetData(sheet, colIndex, dataStartRow, sheetType) {
     } else if (sheetType === '莱芜') {
       // 莱芜表的日期处理（新逻辑）
       if (typeof orderMonth === 'number') {
-        // 处理类似2025.03的数字格式
-        const monthStr = orderMonth.toString();
-        const dotIndex = monthStr.indexOf('.');
-        month = dotIndex !== -1 ? parseInt(monthStr.substring(dotIndex + 1)) : null;
+        month = orderMonth > 12 ? excelDateToMonth(orderMonth) : Math.floor(orderMonth);
       } else if (typeof orderMonth === 'string') {
-        // 处理类似"2025.03"的字符串格式
-        const parts = orderMonth.split('.');
-        if (parts.length === 2) {
-          month = parseInt(parts[1]);
-        } else {
-          const match = orderMonth.match(/(\d{1,2})月?/);
-          month = match ? parseInt(match[1]) : null;
-        }
+        const match = orderMonth.match(/(\d{1,2})月?/);
+        month = match ? parseInt(match[1]) : null;
       }
+      // if (typeof orderMonth === 'number') {
+      //   // 处理类似2025.03的数字格式
+      //   const monthStr = orderMonth.toString();
+      //   const dotIndex = monthStr.indexOf('.');
+      //   month = dotIndex !== -1 ? parseInt(monthStr.substring(dotIndex + 1)) : null;
+      // } else if (typeof orderMonth === 'string') {
+      //   // 处理类似"2025.03"的字符串格式
+      //   const parts = orderMonth.split('.');
+      //   if (parts.length === 2) {
+      //     month = parseInt(parts[1]);
+      //   } else {
+      //     const match = orderMonth.match(/(\d{1,2})月?/);
+      //     month = match ? parseInt(match[1]) : null;
+      //   }
+      // }
     }
 
     if (!month || month < 1 || month > 12) {
