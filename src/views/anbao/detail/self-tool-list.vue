@@ -472,7 +472,7 @@ const showUserPicker = async (type, index = -1) => {
   currentSelectionIndex.value = index;
   searchText.value = '';
   
-  await fetchUsers();
+  // await fetchUsers();
   
   // 初始化选中状态
   currentSelectedUsers.value = [];
