@@ -1,7 +1,9 @@
 <template>
   <van-tabbar v-model="activeTab">
     <van-tabbar-item icon="home-o" @click="activeTab = 0">工具清单</van-tabbar-item>
+    
     <van-tabbar-item icon="setting-o" @click="activeTab = 1">审批设置</van-tabbar-item>
+    <van-tabbar-item icon="clock-o" @click="activeTab = 2">待审批</van-tabbar-item>
   </van-tabbar>
 
   <!-- 工具清单页面 -->
