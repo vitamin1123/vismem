@@ -34,7 +34,7 @@
               </div>
               <div class="tags">
                 <van-tag v-for="(approver, aIndex) in item.approvers" :key="aIndex" type="primary">
-                  {{ approver.type === 'approve' ? '审批' : '知会' }}: {{ approver.name }}
+                  {{ approver.type === 'approve' ? '审批' : '知会' }}: {{ approver.name || approver.text || '未知用户' }}
                 </van-tag>
               </div>
               <div class="footer">
@@ -182,21 +182,16 @@
               @search="fetchUsers"
             />
           </div>
-          <van-checkbox-group v-model="currentSelectedUsers">
-            <van-cell-group>
-              <van-cell
-                v-for="user in filteredUserList"
-                :key="user.value"
-                clickable
-                :title="user.text"
-                @click="toggleUser(user)"
-              >
-                <template #right-icon>
-                  <van-checkbox :name="user.value" @click.stop />
-                </template>
-              </van-cell>
-            </van-cell-group>
-          </van-checkbox-group>
+          <van-cell-group>
+            <van-cell
+              v-for="user in filteredUserList"
+              :key="user.value"
+              clickable
+              :title="user.text"
+              :style="{ color: isUserSelected(user) ? 'red' : 'inherit' }"
+              @click="toggleUser(user)"
+            />
+          </van-cell-group>
         </div>
         
         <!-- 右侧已选人员区域 -->
@@ -205,26 +200,24 @@
           <van-cell-group>
             <template v-if="currentSelectionType === 'starter'">
               <van-cell
-                v-for="(user, index) in approvalSettings.starter"
+                v-for="(user, index) in currentSelectedUsers"
                 :key="index"
-                :title="approvalSettings.starterText.split(',')[index]"
-                :label="user"
+                :title="user.name || user.text || user.code || '未知用户'"
               >
                 <template #right-icon>
-                  <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(user)" />
+                  <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(index)" />
                 </template>
               </van-cell>
             </template>
             
             <template v-else-if="currentSelectionType === 'node' && currentSelectionIndex >= 0">
               <van-cell
-                v-for="(user, index) in approvalSettings.nodes[currentSelectionIndex].users"
+                v-for="(user, index) in currentSelectedUsers"
                 :key="index"
-                :title="approvalSettings.nodes[currentSelectionIndex].usersText.split(',')[index]"
-                :label="user"
+                :title="user.name || user.text || user.code || '未知用户'"
               >
                 <template #right-icon>
-                  <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(user)" />
+                  <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(index)" />
                 </template>
               </van-cell>
             </template>
@@ -246,6 +239,9 @@ import { showToast } from 'vant';
 import { useAuthStore } from '@/store/authStore'
 import apiClient from '@/plugins/axios'
 const user = useAuthStore();
+
+// 用户选择相关状态
+const currentSelectedUsers = ref([]); // 存储完整用户对象的数组
 
 onMounted(async () => {
   await fetchUsers();
@@ -276,17 +272,19 @@ const fetchApprovalSettings = async () => {
           throw new Error(`解析审批配置失败: ${parseError.message}`);
         }
         
-        approvalSettings.starter = auditData.starter.map(item => item.code);
-        approvalSettings.starterText = auditData.starter
-          .map(item => item.name)
-          .join(',');
+        approvalSettings.starter = auditData.starter.map(item => ({ 
+          code: item.code,
+          name: item.name 
+        }));
+        approvalSettings.starterText = approvalSettings.starter.map(u => u.name).join(',');
         
         approvalSettings.nodes = auditData.nodes.map(node => ({
           type: node.type,
-          users: node.users.map(user => user.code),
-          usersText: node.users
-            .map(user => user.name)
-            .join(',')
+          users: node.users.map(user => ({
+            code: user.code,
+            name: user.name
+          })),
+          usersText: node.users.map(u => u.name).join(',')
         }));
       } catch (parseError) {
         console.error('解析审批配置失败:', parseError);
@@ -419,7 +417,6 @@ const typeColumns = [
 
 const searchText = ref('');
 const userList = ref([]);
-const currentSelectedUsers = ref([]);
 const showUserSelect = ref(false);
 const currentSelectionType = ref('');
 const currentSelectionIndex = ref(-1);
@@ -427,13 +424,7 @@ const isAllSelected = ref(false);
 
 const filteredUserList = computed(() => {
   return userList.value;
-  
-  
 });
-
-
-
-
 
 const fetchUsers = async () => {
   try {
@@ -444,7 +435,8 @@ const fetchUsers = async () => {
     if (response.data.code === 0) {
       userList.value = response.data.data.map(user => ({
         text: `${user.postname} - ${user.name}`,
-        value: user.code
+        value: user.code,
+        name: user.name
       }));
     } else {
       showToast('获取用户列表失败');
@@ -456,70 +448,79 @@ const fetchUsers = async () => {
   }
 };
 
+const isUserSelected = (user) => {
+  return currentSelectedUsers.value.some(u => u.code === user.value);
+};
+
 const toggleUser = (user) => {
-  const index = currentSelectedUsers.value.indexOf(user.value);
-  if (index === -1) {
-    currentSelectedUsers.value.push(user.value);
+  const isSelected = isUserSelected(user);
+  if (isSelected) {
+    currentSelectedUsers.value = currentSelectedUsers.value.filter(
+      u => u.code !== user.value
+    );
   } else {
-    currentSelectedUsers.value.splice(index, 1);
+    currentSelectedUsers.value.push({
+      code: user.value,
+      name: user.name,
+      text: user.text
+    });
   }
 };
 
-const handleSelectionChange = (values) => {
-  currentSelectedUsers.value = values;
-};
-
 const showUserPicker = async (type, index = -1) => {
-    currentSelectionType.value = type;
-    currentSelectionIndex.value = index;
-    
-    searchText.value = '';
-    
-    await fetchUsers();
-    
-    if (type === 'starter') {
-      currentSelectedUsers.value = [...approvalSettings.starter];
-    } else if (type === 'node' && index >= 0) {
-      currentSelectedUsers.value = [...approvalSettings.nodes[index].users];
-    }
-    
-    showUserSelect.value = true;
-  };
+  currentSelectionType.value = type;
+  currentSelectionIndex.value = index;
+  searchText.value = '';
+  
+  await fetchUsers();
+  
+  // 初始化选中状态
+  currentSelectedUsers.value = [];
+  
+  if (type === 'starter') {
+    currentSelectedUsers.value = approvalSettings.starter.map(user => ({
+      code: user.code,
+      name: user.name,
+      text: `${user.code} - ${user.name}`
+    }));
+  } else if (type === 'node' && index >= 0) {
+    currentSelectedUsers.value = approvalSettings.nodes[index].users.map(user => ({
+      code: user.code,
+      name: user.name,
+      text: `${user.code} - ${user.name}`
+    }));
+  }
+  
+  showUserSelect.value = true;
+};
 
 const toggleSelectAll = () => {
   isAllSelected.value = !isAllSelected.value;
   if (isAllSelected.value) {
-    currentSelectedUsers.value = filteredUserList.value.map(user => user.value);
+    currentSelectedUsers.value = [...userList.value];
   } else {
     currentSelectedUsers.value = [];
   }
 };
 
-const removeSelectedUser = (userCode) => {
-  const index = currentSelectedUsers.value.indexOf(userCode);
-  if (index !== -1) {
-    currentSelectedUsers.value.splice(index, 1);
-  }
-  console.log('当前选择的用户:', approvalSettings);
+const removeSelectedUser = (index) => {
+  currentSelectedUsers.value.splice(index, 1);
 };
 
 const confirmUserSelection = () => {
   if (currentSelectionType.value === 'starter') {
-    approvalSettings.starter = [...currentSelectedUsers.value];
-    approvalSettings.starterText = currentSelectedUsers.value
-      .map(code => {
-        const user = userList.value.find(u => u.value === code);
-        return user ? user.text.split(' - ')[1] : code;
-      })
-      .join(',');
+    approvalSettings.starter = currentSelectedUsers.value.map(user => ({
+      code: user.code,
+      name: user.name || user.text.split(' - ')[1] || user.code
+    }));
+    approvalSettings.starterText = approvalSettings.starter.map(u => u.name).join(',');
   } else if (currentSelectionType.value === 'node' && currentSelectionIndex.value >= 0) {
-    approvalSettings.nodes[currentSelectionIndex.value].users = [...currentSelectedUsers.value];
-    approvalSettings.nodes[currentSelectionIndex.value].usersText = currentSelectedUsers.value
-      .map(code => {
-        const user = userList.value.find(u => u.value === code);
-        return user ? user.text.split(' - ')[1] : code;
-      })
-      .join(',');
+    approvalSettings.nodes[currentSelectionIndex.value].users = currentSelectedUsers.value.map(user => ({
+      code: user.code,
+      name: user.name || user.text.split(' - ')[1] || user.code
+    }));
+    approvalSettings.nodes[currentSelectionIndex.value].usersText = 
+      approvalSettings.nodes[currentSelectionIndex.value].users.map(u => u.name).join(',');
   }
   
   showUserSelect.value = false;
@@ -556,29 +557,25 @@ const onTypeConfirm = ({ selectedOptions }) => {
 
 const submitApprovalSettings = async () => {
   try {
+    // 数据清洗和格式化
     const auditData = {
-      starter: approvalSettings.starter.map((code, index) => ({
-        code,
-        name: approvalSettings.starterText.split(', ')[index] || '未知用户'
+      starter: approvalSettings.starter.map(user => ({ 
+        code: user.code,
+        name: user.name
       })),
-      
       nodes: approvalSettings.nodes.map(node => ({
         type: node.type,
-        users: node.users.map((code, index) => ({
-          code,
-          name: node.usersText.split(', ')[index] || '未知用户'
+        users: node.users.map(user => ({
+          code: user.code,
+          name: user.name
         }))
       }))
     };
 
-    console.log('准备保存的审批数据:', auditData);
-    
     const saveData = {
       form: 'selftool',
       audit_json: JSON.stringify(auditData)
     };
-
-    console.log('准备发送的请求数据:', saveData);
     
     const response = await apiClient.post('/api/save_approval_settings', saveData);
     
@@ -604,6 +601,7 @@ const saveApprovalSettings = () => {
 </script>
 
 <style scoped>
+/* 原有样式保持不变 */
 .van-dialog {
   max-height: 70vh;
   overflow-y: auto;
@@ -743,9 +741,5 @@ const saveApprovalSettings = () => {
 .van-cell {
   display: flex;
   align-items: center;
-}
-
-.van-checkbox {
-  margin-left: 8px;
 }
 </style>
