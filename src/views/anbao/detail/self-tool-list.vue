@@ -179,7 +179,7 @@
               v-model="searchText"
               placeholder="请输入搜索内容"
               class="search-input"
-              @update:model-value="handleSearchInput"
+              @search="fetchUsers"
             />
           </div>
           <van-checkbox-group v-model="currentSelectedUsers">
@@ -203,15 +203,31 @@
         <div class="right-panel">
           <div class="selected-header">已选人员</div>
           <van-cell-group>
-            <van-cell
-              v-for="userValue in currentSelectedUsers"
-              :key="userValue"
-              :title="userList.find(u => u.value === userValue)?.text || userValue"
-            >
-              <template #right-icon>
-                <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(userValue)" />
-              </template>
-            </van-cell>
+            <template v-if="currentSelectionType === 'starter'">
+              <van-cell
+                v-for="(user, index) in approvalSettings.starter"
+                :key="index"
+                :title="approvalSettings.starterText.split(',')[index]"
+                :label="user"
+              >
+                <template #right-icon>
+                  <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(user)" />
+                </template>
+              </van-cell>
+            </template>
+            
+            <template v-else-if="currentSelectionType === 'node' && currentSelectionIndex >= 0">
+              <van-cell
+                v-for="(user, index) in approvalSettings.nodes[currentSelectionIndex].users"
+                :key="index"
+                :title="approvalSettings.nodes[currentSelectionIndex].usersText.split(',')[index]"
+                :label="user"
+              >
+                <template #right-icon>
+                  <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(user)" />
+                </template>
+              </van-cell>
+            </template>
           </van-cell-group>
         </div>
       </div>
@@ -410,24 +426,14 @@ const currentSelectionIndex = ref(-1);
 const isAllSelected = ref(false);
 
 const filteredUserList = computed(() => {
-  if (!searchText.value.trim()) return userList.value;
+  return userList.value;
   
-  return userList.value.filter(user => 
-    user.text.toLowerCase().includes(searchText.value.trim().toLowerCase())
-  );
+  
 });
 
-const debounce = (fn, delay) => {
-  let timer;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
-  };
-};
 
-const handleSearchInput = debounce(() => {
-  fetchUsers();
-}, 500);
+
+
 
 const fetchUsers = async () => {
   try {
@@ -494,23 +500,26 @@ const removeSelectedUser = (userCode) => {
   if (index !== -1) {
     currentSelectedUsers.value.splice(index, 1);
   }
+  console.log('当前选择的用户:', approvalSettings);
 };
 
 const confirmUserSelection = () => {
-  const selectedUsers = userList.value
-    .filter(user => currentSelectedUsers.value.includes(user.value));
-  
-  const selectedText = selectedUsers.map(u => u.text.split(' - ')[1]).join(',');
-  
   if (currentSelectionType.value === 'starter') {
     approvalSettings.starter = [...currentSelectedUsers.value];
-    approvalSettings.starterText = selectedText;
+    approvalSettings.starterText = currentSelectedUsers.value
+      .map(code => {
+        const user = userList.value.find(u => u.value === code);
+        return user ? user.text.split(' - ')[1] : code;
+      })
+      .join(',');
   } else if (currentSelectionType.value === 'node' && currentSelectionIndex.value >= 0) {
     approvalSettings.nodes[currentSelectionIndex.value].users = [...currentSelectedUsers.value];
-    approvalSettings.nodes[currentSelectionIndex.value].usersText = selectedText;
-    
-    const nodeIndex = currentSelectionIndex.value;
-    approvalSettings.nodes[nodeIndex].usersText = selectedText;
+    approvalSettings.nodes[currentSelectionIndex.value].usersText = currentSelectedUsers.value
+      .map(code => {
+        const user = userList.value.find(u => u.value === code);
+        return user ? user.text.split(' - ')[1] : code;
+      })
+      .join(',');
   }
   
   showUserSelect.value = false;
