@@ -102,7 +102,9 @@ export async function zhongchuan(file) {
       '尺寸': '尺寸 > 尺寸 > 尺寸',
       '签订日期': '签订日期',
       '码头': '码头',
-      '未炼钢': '坯料设计 > 未计划 > 重量',
+      '未计划重量': '坯料设计 > 未计划 > 重量',
+      '待炼量': '坯料进程 > 待炼量 > 重量',
+      '钢坯待出库': '坯料进程 > 钢坯待出库 > 重量',
       '已轧制': '轧钢完成 > 轧钢完成 > 重量',
       '成品在库': '成品在库 > 成品在库 > 重量',
       '出库结束': '出库结束 > 出库结束 > 重量',
@@ -170,7 +172,10 @@ export async function zhongchuan(file) {
       }
       
       // 获取各重量值
-      const unplanned = formatNum(getValue('未炼钢') || 0);
+      const unplanned = formatNum(getValue('未计划重量') || 0);
+      const pendingSmelt = formatNum(getValue('待炼量') || 0);
+      const pendingOutbound = formatNum(getValue('钢坯待出库') || 0);
+      const unSmelted = formatNum(unplanned + pendingSmelt + pendingOutbound); // 未炼钢 = 三个字段之和
       const rolled = formatNum(getValue('已轧制') || 0);
       const inStock = formatNum(getValue('成品在库') || 0);
       const outbound = formatNum(getValue('出库结束') || 0);
@@ -178,7 +183,7 @@ export async function zhongchuan(file) {
       
       // 累加汇总数据
       const target = summary[month][dock];
-      target.未炼钢 = formatNum(target.未炼钢 + unplanned);
+      target.未炼钢 = formatNum(target.未炼钢 + unSmelted);
       target.已轧制 = formatNum(target.已轧制 + rolled);
       target.成品在库 = formatNum(target.成品在库 + inStock);
       target.出库结束 = formatNum(target.出库结束 + outbound);
@@ -193,7 +198,10 @@ export async function zhongchuan(file) {
         牌号材质代码: materialCode,
         尺寸: size,
         签订日期: signDate instanceof Date ? signDate.toISOString().split('T')[0] : signDate,
-        未炼钢: unplanned,
+        未计划重量: unplanned,
+        待炼量: pendingSmelt,
+        钢坯待出库: pendingOutbound,
+        未炼钢: unSmelted,
         已轧制: rolled,
         成品在库: inStock,
         出库结束: outbound,
