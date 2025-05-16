@@ -170,59 +170,57 @@
     </van-popup>
     
     <!-- 用户选择器 (共用) -->
-<!-- 用户选择器部分 -->
-<van-popup v-model:show="showUserSelect" position="bottom" round>
-  <div class="user-selector-container">
-    <!-- 左侧搜索和选择区域 -->
-    <div class="left-panel">
-      <div class="search-container">
-        <van-search
-          v-model="searchText"
-          placeholder="请输入搜索内容"
-          class="search-input"
-          @update:model-value="handleSearchInput"
-        />
+    <van-popup v-model:show="showUserSelect" position="bottom" round>
+      <div class="user-selector-container">
+        <!-- 左侧搜索和选择区域 -->
+        <div class="left-panel">
+          <div class="search-container">
+            <van-search
+              v-model="searchText"
+              placeholder="请输入搜索内容"
+              class="search-input"
+              @update:model-value="handleSearchInput"
+            />
+          </div>
+          <van-checkbox-group v-model="currentSelectedUsers">
+            <van-cell-group>
+              <van-cell
+                v-for="user in filteredUserList"
+                :key="user.value"
+                clickable
+                :title="user.text"
+                @click="toggleUser(user)"
+              >
+                <template #right-icon>
+                  <van-checkbox :name="user.value" @click.stop />
+                </template>
+              </van-cell>
+            </van-cell-group>
+          </van-checkbox-group>
+        </div>
+        
+        <!-- 右侧已选人员区域 -->
+        <div class="right-panel">
+          <div class="selected-header">已选人员</div>
+          <van-cell-group>
+            <van-cell
+              v-for="userValue in currentSelectedUsers"
+              :key="userValue"
+              :title="userList.find(u => u.value === userValue)?.text || userValue"
+            >
+              <template #right-icon>
+                <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(userValue)" />
+              </template>
+            </van-cell>
+          </van-cell-group>
+        </div>
       </div>
-      <van-checkbox-group v-model="currentSelectedUsers">
-        <van-cell-group>
-          <van-cell
-            v-for="user in userList"
-            :key="user.value"
-            clickable
-            :title="user.text"
-            @click="toggleUser(user)"
-          >
-            <template #right-icon>
-              <van-checkbox :name="user.value" @click.stop />
-            </template>
-          </van-cell>
-        </van-cell-group>
-      </van-checkbox-group>
-    </div>
-    
-    <!-- 右侧已选人员区域 -->
-    <div class="right-panel">
-      <div class="selected-header">已选人员</div>
-      <van-cell-group>
-        <van-cell
-          v-for="user in selectedUsersDisplay"
-          :key="user.value"
-          :title="user.text"
-        >
-          <template #right-icon>
-            <van-icon name="clear" size="16" color="#ee0a24" @click.stop="removeSelectedUser(user.value)" />
-          </template>
-        </van-cell>
-      </van-cell-group>
-    </div>
-  </div>
-  
-  <div class="button-group">
-    <van-button type="primary" size="small" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</van-button>
-    <van-button type="primary" size="small" @click="confirmUserSelection">确定</van-button>
-  </div>
-</van-popup>
-
+      
+      <div class="button-group">
+        <van-button type="primary" size="small" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</van-button>
+        <van-button type="primary" size="small" @click="confirmUserSelection">确定</van-button>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -412,20 +410,13 @@ const currentSelectionIndex = ref(-1);
 const isAllSelected = ref(false);
 
 const filteredUserList = computed(() => {
-  // 空搜索词时返回完整列表
   if (!searchText.value.trim()) return userList.value;
   
-  // 有搜索词时过滤
   return userList.value.filter(user => 
     user.text.toLowerCase().includes(searchText.value.trim().toLowerCase())
   );
 });
 
-const selectedUsersDisplay = computed(() => {
-  return userList.value.filter(user => 
-    currentSelectedUsers.value.includes(user.value)
-  );
-});
 const debounce = (fn, delay) => {
   let timer;
   return function(...args) {
@@ -433,9 +424,10 @@ const debounce = (fn, delay) => {
     timer = setTimeout(() => fn.apply(this, args), delay);
   };
 };
+
 const handleSearchInput = debounce(() => {
   fetchUsers();
-}, 500); // 添加防抖，500ms内不重复请求
+}, 500);
 
 const fetchUsers = async () => {
   try {
@@ -477,15 +469,13 @@ const showUserPicker = async (type, index = -1) => {
     
     searchText.value = '';
     
-    // 先设置已选人员，确保右侧面板立即显示
+    await fetchUsers();
+    
     if (type === 'starter') {
       currentSelectedUsers.value = [...approvalSettings.starter];
     } else if (type === 'node' && index >= 0) {
       currentSelectedUsers.value = [...approvalSettings.nodes[index].users];
     }
-    
-    // 再获取用户列表
-    await fetchUsers();
     
     showUserSelect.value = true;
   };
@@ -518,6 +508,9 @@ const confirmUserSelection = () => {
   } else if (currentSelectionType.value === 'node' && currentSelectionIndex.value >= 0) {
     approvalSettings.nodes[currentSelectionIndex.value].users = [...currentSelectedUsers.value];
     approvalSettings.nodes[currentSelectionIndex.value].usersText = selectedText;
+    
+    const nodeIndex = currentSelectionIndex.value;
+    approvalSettings.nodes[nodeIndex].usersText = selectedText;
   }
   
   showUserSelect.value = false;
@@ -569,20 +562,17 @@ const submitApprovalSettings = async () => {
       }))
     };
 
-    // 调试输出
     console.log('准备保存的审批数据:', auditData);
     
     const saveData = {
       form: 'selftool',
-      audit_json: JSON.stringify(auditData) // 只做一次序列化
+      audit_json: JSON.stringify(auditData)
     };
 
-    // 调试输出
     console.log('准备发送的请求数据:', saveData);
     
     const response = await apiClient.post('/api/save_approval_settings', saveData);
     
-    // 更详细的响应检查
     if (response.data && response.data.code === 0) {
       showToast('保存成功');
       return true;
