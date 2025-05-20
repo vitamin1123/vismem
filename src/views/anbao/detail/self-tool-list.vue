@@ -234,6 +234,63 @@
       </div>
     </van-popup>
   </div>
+
+  <!-- 待审批页面 -->
+  <div v-if="activeTab === 2">
+    <van-nav-bar title="待审批工具清单" fixed placeholder />
+    
+    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
+      <van-list
+        v-model:loading="loading"
+        :finished="finished"
+        finished-text="没有更多了"
+        @load="onLoad"
+      >
+        <van-cell v-for="(item, index) in auditList" :key="index">
+          <van-card>
+            <template #title>
+              <div class="card-header">
+                <span>单位：{{ item.unit }}</span>
+                <span class="handler">经办人：{{ item.handler }}</span>
+              </div>
+            </template>
+            <template #desc>
+              <div class="tool-item" v-for="(tool, tIndex) in item.tools" :key="tIndex">
+                <div class="tool-row">
+                  <span class="tool-name">{{ tool.name }}</span>
+                  <span class="tool-spec">{{ tool.spec }}</span>
+                  <span class="tool-quantity">{{ tool.quantity }}</span>
+                  <span class="tool-remark">{{ tool.remark }}</span>
+                </div>
+              </div>
+              <div class="footer">
+                <span class="time">进厂时间：{{ item.entryTime }}</span>
+                <van-button 
+                  type="primary" 
+                  size="small" 
+                  @click="handleAudit(item)"
+                  style="margin-left: 10px;"
+                >
+                  审核
+                </van-button>
+              </div>
+            </template>
+          </van-card>
+        </van-cell>
+      </van-list>
+    </van-pull-refresh>
+
+    <van-dialog 
+      v-model:show="showAuditDialog" 
+      title="确认审核" 
+      show-cancel-button
+      @confirm="confirmAudit"
+    >
+      <div style="padding: 16px;">
+        确认审核通过该工具清单吗？
+      </div>
+    </van-dialog>
+  </div>
 </template>
 
 <script setup>
@@ -250,6 +307,7 @@ onMounted(async () => {
   await fetchUsers();
   await fetchApprovalSettings();
   await fetchCardList();
+  await fetchAuditCardList();
 });
 
 const fetchCardList = async () => {
@@ -264,6 +322,51 @@ const fetchCardList = async () => {
   } catch (error) {
     console.error('获取卡片列表失败:', error);
     showToast('获取卡片列表失败');
+  }
+};
+
+const auditList = ref([]);
+const showAuditDialog = ref(false);
+const currentAuditItem = ref(null);
+
+const fetchAuditCardList = async () => {
+  try {
+    const response = await apiClient.post('/api/get_audit_card_list', {
+      form: 'selftool'
+    });
+    
+    if (response.data.code === 0 && response.data.data) {
+      auditList.value = response.data.data;
+    }
+  } catch (error) {
+    console.error('获取待审批列表失败:', error);
+    showToast('获取待审批列表失败');
+  }
+};
+
+const handleAudit = (item) => {
+  currentAuditItem.value = item;
+  showAuditDialog.value = true;
+};
+
+const confirmAudit = async () => {
+  try {
+    const response = await apiClient.post('/api/audit_card', {
+      id: currentAuditItem.value.id,
+      status: 'approved'
+    });
+    
+    if (response.data.code === 0) {
+      showToast('审核成功');
+      await fetchAuditCardList();
+    } else {
+      showToast(response.data.message || '审核失败');
+    }
+  } catch (error) {
+    console.error('审核失败:', error);
+    showToast('审核失败，请稍后重试');
+  } finally {
+    showAuditDialog.value = false;
   }
 };
 
