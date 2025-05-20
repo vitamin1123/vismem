@@ -336,7 +336,41 @@ const fetchAuditCardList = async () => {
     });
     
     if (response.data.code === 0 && response.data.data) {
-      auditList.value = response.data.data;
+      // 按ID汇总数据
+      const groupedData = response.data.data.reduce((acc, item) => {
+        if (!acc[item.id]) {
+          // 格式化时间
+          const formattedTime = new Date(item.intime).toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }).replace(/\//g, '-');
+          
+          acc[item.id] = {
+            id: item.id,  // 保留原始ID
+            unit: item.company,
+            handler: item.ope.trim(),
+            entryTime: formattedTime,
+            tools: []
+          };
+        }
+        
+        // 添加工具明细
+        acc[item.id].tools.push({
+          name: item.toolname,  // 工具名称
+          spec: item.spec,      // 规格
+          quantity: item.num,   // 数量
+          remark: item.mem      // 备注
+        });
+        
+        return acc;
+      }, {});
+      
+      // 转换为数组
+      auditList.value = Object.values(groupedData);
     }
   } catch (error) {
     console.error('获取待审批列表失败:', error);
@@ -351,6 +385,7 @@ const handleAudit = (item) => {
 
 const confirmAudit = async () => {
   try {
+    console.log('当前审核项:', currentAuditItem.value);
     const response = await apiClient.post('/api/audit_card', {
       id: currentAuditItem.value.id,
       status: 'approved'
