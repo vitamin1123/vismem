@@ -1027,7 +1027,7 @@ const handleLogout = () => {
   // 清空 token 和 userCode
   authStore.clearToken()
   authStore.clearUserCode()
-  
+  authStore.clearUserName()
   // 跳转到登录页面
   router.push('/login')
 }

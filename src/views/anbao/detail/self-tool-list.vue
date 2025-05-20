@@ -53,6 +53,7 @@
       axis="xy"
       magnetic="x"
       @click="showAddDialog = true"
+      
     >
       <van-icon name="plus" />
     </van-floating-bubble>
@@ -70,7 +71,7 @@
           <van-field
             v-model="newTool.handler"
             label="经办人"
-            :value="user.userCode"
+            :value="user.userName"
             readonly
           />
         </van-cell-group>
@@ -248,7 +249,23 @@ const currentSelectedUsers = ref([]); // 存储完整用户对象的数组
 onMounted(async () => {
   await fetchUsers();
   await fetchApprovalSettings();
+  await fetchCardList();
 });
+
+const fetchCardList = async () => {
+  try {
+    const response = await apiClient.post('/api/get_card_list', {
+      form: 'selftool'
+    });
+    
+    if (response.data.code === 0 && response.data.data) {
+      toolList.value = response.data.data;
+    }
+  } catch (error) {
+    console.error('获取卡片列表失败:', error);
+    showToast('获取卡片列表失败');
+  }
+};
 
 const fetchApprovalSettings = async () => {
   try {
@@ -257,41 +274,22 @@ const fetchApprovalSettings = async () => {
     });
     
     if (response.data.code === 0 && response.data.data) {
-      try {
-        let auditData;
-        try {
-          auditData = JSON.parse(response.data.data.data);
-          
-          if (typeof auditData === 'string') {
-            auditData = JSON.parse(auditData);
-          }
-          
-          if (!auditData.starter || !auditData.nodes) {
-            throw new Error('无效的审批配置数据结构');
-          }
-        } catch (parseError) {
-          console.error('解析审批配置数据失败:', response.data.data.data);
-          throw new Error(`解析审批配置失败: ${parseError.message}`);
-        }
-        
-        approvalSettings.starter = auditData.starter.map(item => ({ 
-          code: item.code,
-          name: item.name 
-        }));
-        approvalSettings.starterText = approvalSettings.starter.map(u => u.name).join(',');
-        
-        approvalSettings.nodes = auditData.nodes.map(node => ({
-          type: node.type,
-          users: node.users.map(user => ({
-            code: user.code,
-            name: user.name
-          })),
-          usersText: node.users.map(u => u.name).join(',')
-        }));
-      } catch (parseError) {
-        console.error('解析审批配置失败:', parseError);
-        showToast(`解析审批配置失败: ${parseError.message}`);
-      }
+      const { starter, nodes } = response.data.data;
+      
+      approvalSettings.starter = starter.map(item => ({
+        code: item.code,
+        name: item.name
+      }));
+      approvalSettings.starterText = starter.map(u => u.name).join(',');
+      
+      approvalSettings.nodes = nodes.map(node => ({
+        type: node.type,
+        users: node.users.map(user => ({
+          code: user.code,
+          name: user.name
+        })),
+        usersText: node.users.map(u => u.name).join(',')
+      }));
     } else {
       console.error('获取审批配置失败:', response.data);
       showToast(`获取审批配置失败: ${response.data.message || '未知错误'}`);
@@ -362,7 +360,7 @@ const offset = ref({ x: 200, y: 400 });
 
 const newTool = reactive({
   unit: '',
-  handler: user.userCode,
+  handler: user.userName,
   tools: [
     { name: '', spec: '', quantity: '', remark: '' }
   ]
@@ -380,30 +378,39 @@ const removeTool = (index) => {
   }
 };
 
-const submitTool = () => {
-  const entryTime = new Date().toLocaleString();
-  
-  toolList.value.unshift({
-    unit: newTool.unit,
-    handler: newTool.handler,
-    tools: [...newTool.tools],
-    approvers: [],
-    entryTime
-  });
-  
-  newTool.unit = '';
-  newTool.handler = '';
-  newTool.tools = [{ name: '', spec: '', quantity: '', remark: '' }];
-  
-  showToast('提交成功');
-  showAddDialog.value = false;
-  
-  const jsonStr = JSON.stringify({
-    unit: newTool.unit,
-    handler: newTool.handler,
-    tools: newTool.tools
-  });
-  console.log('提交的数据:', jsonStr);
+const submitTool = async () => {
+  try {
+    const entryTime = new Date().toLocaleString();
+    
+    const response = await apiClient.post('/api/add_self_tool', {
+      unit: newTool.unit,
+      handler: newTool.handler,
+      tools: newTool.tools,
+      entryTime
+    });
+    
+    if (response.data.code === 0) {
+      toolList.value.unshift({
+        unit: newTool.unit,
+        handler: newTool.handler,
+        tools: [...newTool.tools],
+        approvers: [],
+        entryTime
+      });
+      
+      newTool.unit = '';
+      newTool.handler = '';
+      newTool.tools = [{ name: '', spec: '', quantity: '', remark: '' }];
+      
+      showToast('提交成功');
+      showAddDialog.value = false;
+    } else {
+      showToast(response.data.message || '提交失败');
+    }
+  } catch (error) {
+    console.error('提交工具失败:', error);
+    showToast('提交失败，请稍后重试');
+  }
 };
 
 const approvalSettings = reactive({

@@ -15,6 +15,7 @@ import securityCheck from '@/views/anbao/detail/security-check.vue'
 import guest from '@/views/anbao/detail/guest.vue'
 import guest_car from '@/views/anbao/detail/guest_car.vue'
 import xunluo from '@/views/anbao/detail/xunluo.vue'
+import apiClient from '@/plugins/axios'
 
 
 import { useAuthStore } from '@/store/authStore'
@@ -154,7 +155,7 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   // document.title = to.meta.title || '自助功能'
   document.title = (to.meta?.title as string) ?? '自助功能'
   const authStore = useAuthStore()
@@ -162,9 +163,22 @@ router.beforeEach((to, from, next) => {
   // 从 URL 中提取 token 参数
   const tokenFromQuery = Array.isArray(to.query.token) ? to.query.token[0] : to.query.token
 
-  // 如果 URL 中有 token 并且 authStore 没有保存 token，则存储 token 并移除 URL 中的 token 参数
-  if (tokenFromQuery && tokenFromQuery !== authStore.token) {
+  // 如果 URL 中有 token，则强制更新 authStore 中的 token 并移除 URL 中的 token 参数
+  if (tokenFromQuery) {
     authStore.setToken(tokenFromQuery)
+
+    // 调用接口获取用户信息
+    try {
+      const response = await apiClient.post('/api/get_usercinfo_')
+      if (response.data.code === 200 && response.data.data?.length > 0) {
+        const userInfo = response.data.data[0]
+        authStore.setUserCode(userInfo.usercode)
+        // 可以在这里添加name到store的逻辑，如果store中需要的话
+        authStore.setUserName(userInfo.name)
+      }
+    } catch (error) {
+      console.error('获取用户信息失败:', error)
+    }
 
     // 移除 token 参数
     const { token, ...queryWithoutToken } = to.query
@@ -189,7 +203,7 @@ router.beforeEach((to, from, next) => {
   next()
 })
 
-// router.beforeEach((to, from, next) => {
+// router.beforeEach(async (to, from, next) => {
 //   const authStore = useAuthStore()
 
 //   // 从 URL 中获取 token，并确保它是 string 类型

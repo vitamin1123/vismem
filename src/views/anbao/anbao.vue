@@ -1,6 +1,7 @@
 <template>
     <div class="menu-page">
       <van-nav-bar title="菜单" fixed placeholder />
+      <van-notice-bar :text="`欢迎使用安保平台，${user.userName}`" left-icon="volume-o" />
       
       <div class="menu-container">
         <div v-for="(row, rowIndex) in menuRows" :key="rowIndex" class="menu-row">
@@ -21,8 +22,9 @@
   <script setup>
   import { ref, computed } from 'vue';
   import { useRouter } from 'vue-router';
-  import { NavBar, Grid, GridItem } from 'vant';
-  
+  import { NavBar, Grid, GridItem, NoticeBar } from 'vant';
+  import { useAuthStore } from '@/store/authStore'
+  const user = useAuthStore();
   const router = useRouter();
   
   // 菜单数据

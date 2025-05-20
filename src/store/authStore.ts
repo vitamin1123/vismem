@@ -32,6 +32,21 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.removeItem('userCode');
     }
 
+    // userName 相关逻辑
+    const userName = ref<string | null>(localStorage.getItem('userName'));
+
+    // 设置 userName，并保存到 localStorage
+    function setUserName(newUserName: string) {
+      userName.value = newUserName;
+      localStorage.setItem('userName', newUserName);
+    }
+  
+    // 清除 userName
+    function clearUserName() {
+      userName.value = null;
+      localStorage.removeItem('userName');
+    }
+
   return {
     token,
     setToken,
@@ -39,5 +54,8 @@ export const useAuthStore = defineStore('auth', () => {
     userCode,
     setUserCode,
     clearUserCode,
+    userName,
+    setUserName,
+    clearUserName,
   }
 })
