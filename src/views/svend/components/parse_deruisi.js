@@ -21,260 +21,184 @@ async function readExcelFile(file) {
   });
 }
 
-function parseMergedHeaders(sheet) {
-  if (!sheet['!ref']) throw new Error('无效的工作表，缺少范围定义');
+function parseExecutionSheet(sheet) {
+  if (!sheet['!ref']) throw new Error('无效的执行中工作表，缺少范围定义');
 
   const range = XLSX.utils.decode_range(sheet['!ref']);
-  const merges = sheet['!merges'] || [];
-  const headerRows = [];
+  const data = {};
 
-  // 读取两层表头（索引0-1对应Excel第1-2行）
-  for (let r = 0; r <= 1; r++) {
-    const row = [];
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-      row.push(cell ? String(cell.v || '').trim() : '');
-    }
-    headerRows.push(row);
+  // 查找关键列索引
+  let orderMonthCol = -1;
+  let dockCol = -1;
+  let resourceNoCol = -1;
+  let shippedCol = -1;
+
+  // 查找表头行（假设在第三行）
+  const headerRow = 2; // Excel第3行
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: headerRow, c })];
+    const value = cell ? String(cell.v || '').trim() : '';
+    
+    if (value === '订货月') orderMonthCol = c;
+    else if (value === '码头') dockCol = c;
+    else if (value === '钢厂资源号') resourceNoCol = c;
+    else if (value === '已发货') shippedCol = c;
   }
 
-  // 处理合并单元格
-  merges.forEach(merge => {
-    if (merge.s.r >= 0 && merge.s.r <= 1) {
-      const value = headerRows[merge.s.r][merge.s.c];
-      for (let r = merge.s.r; r <= merge.e.r; r++) {
-        for (let c = merge.s.c; c <= merge.e.c; c++) {
-          if (r >= 0 && r <= 1) headerRows[r][c] = value;
+  if (orderMonthCol === -1 || dockCol === -1 || resourceNoCol === -1 || shippedCol === -1) {
+    throw new Error('执行中工作表缺少必要的列：订货月、码头、钢厂资源号或已发货');
+  }
+
+  // 读取数据行
+  for (let r = headerRow + 1; r <= range.e.r; r++) {
+    const resourceNoCell = sheet[XLSX.utils.encode_cell({ r, c: resourceNoCol })];
+    if (!resourceNoCell) continue;
+
+    const resourceNo = String(resourceNoCell.v || '').trim();
+    if (!resourceNo) continue;
+
+    const orderMonthCell = sheet[XLSX.utils.encode_cell({ r, c: orderMonthCol })];
+    const dockCell = sheet[XLSX.utils.encode_cell({ r, c: dockCol })];
+    const shippedCell = sheet[XLSX.utils.encode_cell({ r, c: shippedCol })];
+
+    data[resourceNo] = {
+      orderMonth: orderMonthCell ? orderMonthCell.v : null,
+      dock: dockCell ? String(dockCell.v || '').trim() : null,
+      shipped: shippedCell ? Number(shippedCell.v) || 0 : 0
+    };
+  }
+
+  return data;
+}
+
+function parseProductionSheet(sheet, executionData) {
+  if (!sheet['!ref']) throw new Error('无效的生产进程工作表，缺少范围定义');
+
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  const result = {
+    summary: {},
+    details: [],
+    processedRows: 0
+  };
+
+  // 查找基础信息列索引（第一行）
+  const baseHeaderRow = 0; // Excel第1行
+  let companyCol = -1;
+  let resourceNoCol = -1;
+  let steelGradeCol = -1;
+  let specCol = -1;
+
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: baseHeaderRow, c })];
+    const value = cell ? String(cell.v || '').trim() : '';
+    
+    if (value === '公司别') companyCol = c;
+    else if (value === '钢厂资源号') resourceNoCol = c;
+    else if (value === '钢种') steelGradeCol = c;
+    else if (value === '规格') specCol = c;
+  }
+
+  // 查找工序列索引（第二行）
+  const processHeaderRow = 1; // Excel第2行
+  const processCols = {
+    steelMaking: { name: '炼钢工序', col: -1, deficitCol: -1 },
+    rolling: { name: '厚板轧制', col: -1, deficitCol: -1 },
+    inspection: { name: '材合', col: -1, deficitCol: -1 },
+    confirm: { name: '准发确认', col: -1, deficitCol: -1 },
+    complete: { name: '出厂完毕', col: -1, deficitCol: -1 }
+  };
+
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: processHeaderRow, c })];
+    const value = cell ? String(cell.v || '').trim() : '';
+
+    for (const [key, proc] of Object.entries(processCols)) {
+      if (value === proc.name) {
+        proc.col = c;
+        // 欠量在第三行的c+2位置
+        const deficitCell = sheet[XLSX.utils.encode_cell({ r: processHeaderRow + 1, c: c + 2 })];
+        if (deficitCell && String(deficitCell.v || '').trim() === '欠量') {
+          proc.deficitCol = c + 2;
         }
+        break;
       }
     }
-  });
-
-  // 构建列定义
-  const columns = [];
-  for (let c = 0; c < headerRows[0].length; c++) {
-    const path = [headerRows[0][c], headerRows[1][c]].filter(Boolean);
-    columns.push({
-      index: c,
-      path: path,
-      fullPath: path.join(' > '),
-      level1: path[0] || null,
-      level2: path[1] || null
-    });
   }
 
-  return { 
-    columns,
-    dataStartRow: 2 // 明确指定数据从索引2开始（Excel第3行）
-  };
-}
-
-function parseSingleHeader(sheet) {
-  if (!sheet['!ref']) throw new Error('无效的工作表，缺少范围定义');
-
-  const range = XLSX.utils.decode_range(sheet['!ref']);
-  const headerRow = [];
-
-  // 读取单层表头（索引0对应Excel第1行）
-  for (let c = range.s.c; c <= range.e.c; c++) {
-    const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })];
-    headerRow.push(cell ? String(cell.v || '').trim() : '');
-  }
-
-  // 构建列定义
-  const columns = [];
-  for (let c = 0; c < headerRow.length; c++) {
-    columns.push({
-      index: c,
-      path: [headerRow[c]],
-      fullPath: headerRow[c],
-      level1: headerRow[c],
-      level2: null
-    });
-  }
-
-  return { 
-    columns,
-    dataStartRow: 1 // 数据从索引1开始（Excel第2行）
-  };
-}
-
-async function processRizhaoSheet(sheet) {
-  const { columns, dataStartRow } = parseMergedHeaders(sheet);
-  console.log(`日照表数据起始行索引: ${dataStartRow}（Excel第${dataStartRow + 1}行）`);
-
-  // 目标列定义
-  const targetColumns = {
-    '订货月': '订货月 > 订货月',
-    '码头': '码头 > 码头',
-    '钢种': '钢种 > 钢种',
-    '订货厚度': '订货厚度 > 订货厚度',
-    '订货宽度': '订货宽度 > 订货宽度',
-    '订货长度': '订货长度 > 订货长度',
-    '未集港': '准发确认（在库量/欠量） > 欠量',
-    '已发运': '发货 > 已发量',
-    '未发运': '发货 > 欠量',
-    '未船检': '材合（在库量/欠量） > 欠量',
-    '未炼钢': '炼钢工序（在库量/欠量） > 欠量',
-    '未轧制': '厚板轧制（在库量/欠量） > 欠量'
-  };
-
-  // 构建列索引（增强验证）
-  const colIndex = {};
-  const missingColumns = [];
+  // 验证所有必要列
+  const missingCols = [];
+  if (companyCol === -1) missingCols.push('公司别');
+  if (resourceNoCol === -1) missingCols.push('钢厂资源号');
+  if (steelGradeCol === -1) missingCols.push('钢种');
+  if (specCol === -1) missingCols.push('规格');
   
-  console.log('===== 日照表列匹配验证 =====');
-  for (const [colName, fullPath] of Object.entries(targetColumns)) {
-    const col = columns.find(c => c.fullPath === fullPath);
-    if (!col) {
-      missingColumns.push({ name: colName, path: fullPath });
-      console.error(`❌ 列缺失: ${colName.padEnd(6)} -> ${fullPath}`);
-      continue;
+  for (const [key, proc] of Object.entries(processCols)) {
+    if (proc.deficitCol === -1) {
+      missingCols.push(`${proc.name}>欠量`);
     }
-    colIndex[colName] = col.index;
-    
-    // 验证数据行是否存在值
-    const testCell = sheet[XLSX.utils.encode_cell({ r: dataStartRow, c: col.index })];
-    console.log(`✅ ${colName.padEnd(6)} -> 列${col.index} | 首行值: ${testCell ? testCell.v : '空'}`);
   }
 
-  if (missingColumns.length > 0) {
-    const errorDetails = missingColumns.map(m => 
-      `- ${m.name}: 未找到路径 "${m.path}"`
-    ).join('\n');
-    
-    throw new Error(`日照表以下列未匹配:\n${errorDetails}\n\n请检查Excel表头是否包含这些列，或路径定义是否正确`);
+  if (missingCols.length > 0) {
+    throw new Error(`生产进程工作表缺少必要的列: ${missingCols.join(', ')}`);
   }
 
-  return { colIndex, dataStartRow };
-}
+  // 处理数据行（从第四行开始）
+  for (let r = processHeaderRow + 2; r <= range.e.r; r++) {
+    const resourceNoCell = sheet[XLSX.utils.encode_cell({ r, c: resourceNoCol })];
+    if (!resourceNoCell) continue;
 
-async function processLaiwuSheet(sheet) {
-  const { columns, dataStartRow } = parseSingleHeader(sheet);
-  console.log(`莱芜表数据起始行索引: ${dataStartRow}（Excel第${dataStartRow + 1}行）`);
+    const resourceNo = String(resourceNoCell.v || '').trim();
+    if (!resourceNo || !executionData[resourceNo]) continue;
 
-  // 目标列定义
-  const targetColumns = {
-    '订货月': '订货月',
-    '码头': '码头',
-    '钢种': '牌号',
-    '订货厚度': '订货厚度',
-    '订货宽度': '订货宽度',
-    '订货长度': '订货最大长度',
-    '未集港': '合同准发欠量',
-    '已发运': '合同已发货量',
-    '未发运': '未发量',
-    '未船检': '材合欠量',
-    '未炼钢': '厚板炼钢连铸欠量',
-    '未轧制': '厚板轧机欠量'
-  };
-
-  // 构建列索引（增强验证）
-  const colIndex = {};
-  const missingColumns = [];
-  
-  console.log('===== 莱芜表列匹配验证 =====');
-  for (const [colName, fullPath] of Object.entries(targetColumns)) {
-    const col = columns.find(c => c.fullPath === fullPath);
-    if (!col) {
-      missingColumns.push({ name: colName, path: fullPath });
-      console.error(`❌ 列缺失: ${colName.padEnd(6)} -> ${fullPath}`);
-      continue;
-    }
-    colIndex[colName] = col.index;
+    const execInfo = executionData[resourceNo];
+    const companyCell = sheet[XLSX.utils.encode_cell({ r, c: companyCol })];
+    const steelGradeCell = sheet[XLSX.utils.encode_cell({ r, c: steelGradeCol })];
+    const specCell = sheet[XLSX.utils.encode_cell({ r, c: specCol })];
     
-    // 验证数据行是否存在值
-    const testCell = sheet[XLSX.utils.encode_cell({ r: dataStartRow, c: col.index })];
-    console.log(`✅ ${colName.padEnd(6)} -> 列${col.index} | 首行值: ${testCell ? testCell.v : '空'}`);
-  }
-
-  if (missingColumns.length > 0) {
-    const errorDetails = missingColumns.map(m => 
-      `- ${m.name}: 未找到路径 "${m.path}"`
-    ).join('\n');
+    const company = companyCell ? String(companyCell.v || '').trim() : '';
+    const steelGrade = steelGradeCell ? String(steelGradeCell.v || '').trim() : '';
+    const spec = specCell ? String(specCell.v || '').trim() : '';
     
-    throw new Error(`莱芜表以下列未匹配:\n${errorDetails}\n\n请检查Excel表头是否包含这些列，或路径定义是否正确`);
-  }
+    // 解析规格
+    const specParts = spec.split('*').map(part => parseFloat(part.trim()));
+    const thickness = specParts.length > 0 ? specParts[0] : 0;
+    const width = specParts.length > 1 ? specParts[1] : 0;
+    const length = specParts.length > 2 ? specParts[2] : 0;
 
-  return { colIndex, dataStartRow };
-}
-
-function processSheetData(sheet, colIndex, dataStartRow, sheetType) {
-  const range = XLSX.utils.decode_range(sheet['!ref']);
-  const summary = {};
-  const details = [];
-  let processedRows = 0;
-
-  const formatNum = (val) => {
-    const num = Number(val);
-    return isNaN(num) ? 0 : parseFloat(num.toFixed(3));
-  };
-
-  const excelDateToMonth = (serial) => {
-    if (!serial || isNaN(serial)) return null;
-    const utcDays = Math.floor(serial - 25569);
-    const date = new Date(utcDays * 86400 * 1000);
-    return date.getMonth() + 1;
-  };
-
-  console.log(`\n===== 开始处理${sheetType}表数据 =====`);
-  for (let r = dataStartRow; r <= range.e.r; r++) {
-    const getValue = (colName) => {
-      const cell = sheet[XLSX.utils.encode_cell({ r, c: colIndex[colName] })];
-      return cell ? cell.v : null;
+    // 获取各工序欠量值
+    const getDeficit = (col) => {
+      if (col === -1) return 0;
+      const cell = sheet[XLSX.utils.encode_cell({ r, c: col })];
+      return cell ? Number(cell.v) || 0 : 0;
     };
 
-    // 调试输出首行数据
-    if (r === dataStartRow) {
-      console.log('首行数据样例:');
-      ['订货月', '码头', '钢种'].forEach(col => {
-        const val = getValue(col);
-        console.log(`  ${col}: ${val} (${typeof val})`);
-      });
+    const steelDeficit = getDeficit(processCols.steelMaking.deficitCol);
+    const rollingDeficit = getDeficit(processCols.rolling.deficitCol);
+    const inspectionDeficit = getDeficit(processCols.inspection.deficitCol);
+    
+    // 根据公司别确定未集港值
+    let portDeficit = 0;
+    if (company.includes('宝山') || company.includes('湛江')) {
+      portDeficit = getDeficit(processCols.confirm.deficitCol);
+    } else if (company.includes('日照')) {
+      portDeficit = getDeficit(processCols.complete.deficitCol);
     }
 
-    const orderMonth = getValue('订货月');
-    const dock = getValue('码头');
-    const steelGrade = getValue('钢种');
-
-    // 严格校验关键字段
-    if (orderMonth === null || orderMonth === undefined || !dock || !steelGrade) {
-      continue;
-    }
-
-    // 日期处理（根据不同的表类型处理）
+    // 处理订货月格式
     let month;
-    if (sheetType === '日照') {
-      // 日照表的日期处理（保持原逻辑）
-      if (typeof orderMonth === 'number') {
-        month = orderMonth > 12 ? excelDateToMonth(orderMonth) : Math.floor(orderMonth);
-      } else if (typeof orderMonth === 'string') {
-        const match = orderMonth.match(/(\d{1,2})月?/);
-        month = match ? parseInt(match[1]) : null;
+    const orderMonth = execInfo.orderMonth;
+    if (typeof orderMonth === 'number') {
+      if (orderMonth > 12) {
+        // Excel日期格式
+        const utcDays = Math.floor(orderMonth - 25569);
+        const date = new Date(utcDays * 86400 * 1000);
+        month = date.getMonth() + 1;
+      } else {
+        month = Math.floor(orderMonth);
       }
-    } else if (sheetType === '莱芜') {
-      // 莱芜表的日期处理（新逻辑）
-      if (typeof orderMonth === 'number') {
-        month = orderMonth > 12 ? excelDateToMonth(orderMonth) : Math.floor(orderMonth);
-      } else if (typeof orderMonth === 'string') {
-        const match = orderMonth.match(/(\d{1,2})月?/);
-        month = match ? parseInt(match[1]) : null;
-      }
-      // if (typeof orderMonth === 'number') {
-      //   // 处理类似2025.03的数字格式
-      //   const monthStr = orderMonth.toString();
-      //   const dotIndex = monthStr.indexOf('.');
-      //   month = dotIndex !== -1 ? parseInt(monthStr.substring(dotIndex + 1)) : null;
-      // } else if (typeof orderMonth === 'string') {
-      //   // 处理类似"2025.03"的字符串格式
-      //   const parts = orderMonth.split('.');
-      //   if (parts.length === 2) {
-      //     month = parseInt(parts[1]);
-      //   } else {
-      //     const match = orderMonth.match(/(\d{1,2})月?/);
-      //     month = match ? parseInt(match[1]) : null;
-      //   }
-      // }
+    } else if (typeof orderMonth === 'string') {
+      const match = orderMonth.match(/(\d{1,2})月?/);
+      month = match ? parseInt(match[1]) : null;
     }
 
     if (!month || month < 1 || month > 12) {
@@ -282,58 +206,53 @@ function processSheetData(sheet, colIndex, dataStartRow, sheetType) {
       continue;
     }
 
-    // 数据累加
     const monthKey = String(month);
-    summary[monthKey] = summary[monthKey] || {};
-    summary[monthKey][dock] = summary[monthKey][dock] || {
+    const dock = execInfo.dock || '未知';
+
+    // 添加到汇总
+    result.summary[monthKey] = result.summary[monthKey] || {};
+    result.summary[monthKey][dock] = result.summary[monthKey][dock] || {
       未炼钢: 0, 未轧制: 0, 未船检: 0,
-      未集港: 0, 已发运: 0, 未发运: 0, 合同数: 0
+      未集港: 0, 已发运: 0, 合同数: 0
     };
 
-    const target = summary[monthKey][dock];
-    [
-      ['未炼钢', '未炼钢'],
-      ['未轧制', '未轧制'],
-      ['未船检', '未船检'],
-      ['未集港', '未集港'],
-      ['已发运', '已发运'],
-      ['未发运', '未发运']
-    ].forEach(([field, col]) => {
-      target[field] += formatNum(getValue(col));
-    });
+    const target = result.summary[monthKey][dock];
+    target.未炼钢 += steelDeficit;
+    target.未轧制 += rollingDeficit;
+    target.未船检 += inspectionDeficit;
+    target.未集港 += portDeficit;
+    target.已发运 += execInfo.shipped;
+    
     target.合同数++;
 
-    details.push({
+    // 添加到详情
+    result.details.push({
       月份: monthKey,
       月份显示: `${month}月`,
-      码头: String(dock).trim(),
-      钢种: String(steelGrade),
-      订货厚度: getValue('订货厚度'),
-      订货宽度: getValue('订货宽度'),
-      订货长度: getValue('订货长度'),
-      订货月份: sheetType === '日照' 
-        ? (typeof orderMonth === 'number' && orderMonth > 12
-          ? new Date((orderMonth - 25569) * 86400 * 1000).toISOString().split('T')[0]
-          : String(orderMonth))
-        : String(orderMonth), // 莱芜表保持原始格式
-      未炼钢: formatNum(getValue('未炼钢')),
-      未轧制: formatNum(getValue('未轧制')),
-      未船检: formatNum(getValue('未船检')),
-      未集港: formatNum(getValue('未集港')),
-      已发运: formatNum(getValue('已发运')),
-      未发运: formatNum(getValue('未发运')),
-      来源: sheetType
+      码头: dock,
+      钢种: steelGrade,
+      订货厚度: thickness,
+      订货宽度: width,
+      订货长度: length,
+      订货月份: typeof orderMonth === 'number' && orderMonth > 12
+        ? new Date((orderMonth - 25569) * 86400 * 1000).toISOString().split('T')[0]
+        : String(orderMonth),
+      未炼钢: steelDeficit,
+      未轧制: rollingDeficit,
+      未船检: inspectionDeficit,
+      未集港: portDeficit,
+      已发运: execInfo.shipped,
+      来源: '生产进程'
     });
 
-    processedRows++;
+    result.processedRows++;
   }
 
-  console.log(`\n${sheetType}表处理完成: 有效行 ${processedRows}`);
-  if (processedRows === 0) {
-    throw new Error(`无有效数据处理。可能原因:\n1. 数据起始行设置错误\n2. 关键字段值为空\n3. 日期格式不匹配`);
+  if (result.processedRows === 0) {
+    throw new Error('无有效数据处理。可能原因:\n1. 数据起始行设置错误\n2. 关键字段值为空\n3. 日期格式不匹配\n4. 钢厂资源号匹配失败');
   }
 
-  return { summary, details, processedRows };
+  return result;
 }
 
 export async function deruisi(file) {
@@ -346,56 +265,38 @@ export async function deruisi(file) {
       stats: { processedRows: 0 }
     };
 
-    // 处理日照表
-    if (workbook.SheetNames.includes('日照')) {
-      const sheet = workbook.Sheets['日照'];
-      const { colIndex, dataStartRow } = await processRizhaoSheet(sheet);
-      const { summary, details, processedRows } = processSheetData(sheet, colIndex, dataStartRow, '日照');
-      
-      // 合并结果
-      Object.keys(summary).forEach(month => {
-        result.summary[month] = result.summary[month] || {};
-        Object.keys(summary[month]).forEach(dock => {
-          result.summary[month][dock] = result.summary[month][dock] || {
-            未炼钢: 0, 未轧制: 0, 未船检: 0,
-            未集港: 0, 已发运: 0, 未发运: 0, 合同数: 0
-          };
-          
-          Object.keys(summary[month][dock]).forEach(key => {
-            result.summary[month][dock][key] += summary[month][dock][key];
-          });
-        });
-      });
-      result.details = result.details.concat(details);
-      result.stats.processedRows += processedRows;
+    // 检查必要的工作表
+    if (!workbook.SheetNames.includes('执行中') || !workbook.SheetNames.includes('生产进程')) {
+      throw new Error('Excel文件中必须包含"执行中"和"生产进程"工作表');
     }
 
-    // 处理莱芜表
-    if (workbook.SheetNames.includes('莱芜')) {
-      const sheet = workbook.Sheets['莱芜'];
-      const { colIndex, dataStartRow } = await processLaiwuSheet(sheet);
-      const { summary, details, processedRows } = processSheetData(sheet, colIndex, dataStartRow, '莱芜');
-      
-      // 合并结果
-      Object.keys(summary).forEach(month => {
-        result.summary[month] = result.summary[month] || {};
-        Object.keys(summary[month]).forEach(dock => {
-          result.summary[month][dock] = result.summary[month][dock] || {
-            未炼钢: 0, 未轧制: 0, 未船检: 0,
-            未集港: 0, 已发运: 0, 未发运: 0, 合同数: 0
-          };
-          
-          Object.keys(summary[month][dock]).forEach(key => {
-            result.summary[month][dock][key] += summary[month][dock][key];
-          });
+    // 处理执行中工作表
+    const executionSheet = workbook.Sheets['执行中'];
+    const executionData = parseExecutionSheet(executionSheet);
+
+    // 处理生产进程工作表
+    const productionSheet = workbook.Sheets['生产进程'];
+    const { summary, details, processedRows } = parseProductionSheet(productionSheet, executionData);
+
+    // 合并结果
+    Object.keys(summary).forEach(month => {
+      result.summary[month] = result.summary[month] || {};
+      Object.keys(summary[month]).forEach(dock => {
+        result.summary[month][dock] = result.summary[month][dock] || {
+          未炼钢: 0, 未轧制: 0, 未船检: 0,
+          未集港: 0, 已发运: 0, 合同数: 0
+        };
+        
+        Object.keys(summary[month][dock]).forEach(key => {
+          result.summary[month][dock][key] += summary[month][dock][key];
         });
       });
-      result.details = result.details.concat(details);
-      result.stats.processedRows += processedRows;
-    }
+    });
+    result.details = details;
+    result.stats.processedRows = processedRows;
 
     if (result.stats.processedRows === 0) {
-      throw new Error('无有效数据处理。可能原因:\n1. 没有找到日照或莱芜工作表\n2. 数据起始行设置错误\n3. 关键字段值为空\n4. 日期格式不匹配');
+      throw new Error('无有效数据处理。可能原因:\n1. 没有找到匹配的数据\n2. 数据格式不正确');
     }
 
     return result;

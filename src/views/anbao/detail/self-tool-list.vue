@@ -1,9 +1,9 @@
 <template>
   <van-tabbar v-model="activeTab">
-    <van-tabbar-item icon="home-o" @click="activeTab = 0">工具清单</van-tabbar-item>
+    <van-tabbar-item icon="home-o" @click="handleToolListTabClick">工具清单</van-tabbar-item>
     
-    <van-tabbar-item icon="setting-o" @click="activeTab = 1">审批设置</van-tabbar-item>
-    <van-tabbar-item icon="clock-o" @click="activeTab = 2">待审批</van-tabbar-item>
+    <van-tabbar-item v-if="user.userCode === '10030203' || user.userCode === '10001050'" icon="setting-o" @click="activeTab = 1">审批设置</van-tabbar-item>
+    <van-tabbar-item icon="clock-o" @click="handleAuditTabClick">待审批</van-tabbar-item>
   </van-tabbar>
 
   <!-- 工具清单页面 -->
@@ -18,9 +18,11 @@
         @load="onLoad"
       >
         <van-cell v-for="(item, index) in toolList" :key="index">
-          <van-card>
+          <van-card :class="{ 'approved-card': item.state === -1 }">
             <template #title>
+              
               <div class="card-header">
+                
                 <span>单位：{{ item.unit }}</span>
                 <span class="handler">经办人：{{ item.handler }}</span>
               </div>
@@ -250,6 +252,7 @@
           <van-card>
             <template #title>
               <div class="card-header">
+                <van-tag v-if="item.state === -1" class="status-tag" type="success" size="mini" style="position: absolute; top: 0; left: 0; font-size: 10px;">审批完成</van-tag>
                 <span>单位：{{ item.unit }}</span>
                 <span class="handler">经办人：{{ item.handler }}</span>
               </div>
@@ -317,11 +320,53 @@ const fetchCardList = async () => {
     });
     
     if (response.data.code === 0 && response.data.data) {
-      toolList.value = response.data.data;
+      // 按ID汇总数据
+      const groupedData = response.data.data.reduce((acc, item) => {
+        if (!acc[item.id]) {
+          // 格式化时间
+          const formattedTime = new Date(item.intime).toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }).replace(/\//g, '-');
+          
+          acc[item.id] = {
+            id: item.id,
+            unit: item.company,
+            handler: item.ope.trim(),
+            state: item.state,
+            entryTime: formattedTime,
+            tools: [],
+            approvers: item.auditors ? item.auditors.split(',').map(name => ({
+              type: 'approve',
+              name: name.trim()
+            })) : []
+          };
+        }
+        
+        // 添加工具明细
+        acc[item.id].tools.push({
+          name: item.toolname,
+          spec: item.spec,
+          quantity: item.num,
+          remark: item.mem
+        });
+        
+        return acc;
+      }, {});
+      
+      // 转换为数组
+      toolList.value = Object.values(groupedData);
+      loading.value = false;
+      finished.value = true;
     }
   } catch (error) {
     console.error('获取卡片列表失败:', error);
     showToast('获取卡片列表失败');
+    loading.value = false;
   }
 };
 
@@ -335,9 +380,13 @@ const fetchAuditCardList = async () => {
       form: 'selftool'
     });
     
-    if (response.data.code === 0 && response.data.data) {
+    if (response.data.code === 0 ) {
       // 按ID汇总数据
-      const groupedData = response.data.data.reduce((acc, item) => {
+      const responseData = response.data.data;
+      if (!Array.isArray(responseData)) {
+        auditList.value = [];
+      } else {
+        const groupedData = response.data.data.reduce((acc, item) => {
         if (!acc[item.id]) {
           // 格式化时间
           const formattedTime = new Date(item.intime).toLocaleString('zh-CN', {
@@ -354,7 +403,11 @@ const fetchAuditCardList = async () => {
             unit: item.company,
             handler: item.ope.trim(),
             entryTime: formattedTime,
-            tools: []
+            tools: [],
+            approvers: item.auditors ? item.auditors.split(',').map(name => ({
+              type: 'approve',
+              name: name.trim()
+            })) : []
           };
         }
         
@@ -368,13 +421,17 @@ const fetchAuditCardList = async () => {
         
         return acc;
       }, {});
-      
+        auditList.value = Object.values(groupedData);
+
+      }
       // 转换为数组
-      auditList.value = Object.values(groupedData);
+      loading.value = false;
+      finished.value = true;
     }
   } catch (error) {
     console.error('获取待审批列表失败:', error);
     showToast('获取待审批列表失败');
+    loading.value = false;
   }
 };
 
@@ -440,32 +497,18 @@ const fetchApprovalSettings = async () => {
 
 const activeTab = ref(0);
 
+const handleToolListTabClick = () => {
+  activeTab.value = 0;
+  fetchCardList();
+};
+
+const handleAuditTabClick = () => {
+  activeTab.value = 2;
+  fetchAuditCardList();
+};
+
 const toolList = ref([
-  {
-    unit: '第一工程队',
-    handler: '张三',
-    tools: [
-      { name: '电钻', spec: '220V', quantity: 2, remark: '全新' },
-      { name: '扳手', spec: '12寸', quantity: 5, remark: '' }
-    ],
-    approvers: [
-      { type: 'approve', name: '李四' },
-      { type: 'notify', name: '王五' }
-    ],
-    entryTime: '2023-05-10 08:30'
-  },
-  {
-    unit: '第二工程队',
-    handler: '李四',
-    tools: [
-      { name: '锤子', spec: '2磅', quantity: 3, remark: '' },
-      { name: '螺丝刀', spec: '十字', quantity: 4, remark: '各种尺寸' }
-    ],
-    approvers: [
-      { type: 'approve', name: '赵六' }
-    ],
-    entryTime: '2023-05-11 09:15'
-  }
+  
 ]);
 
 const loading = ref(false);
@@ -748,6 +791,20 @@ const saveApprovalSettings = () => {
 </script>
 
 <style scoped>
+.approved-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.approved-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: #07c160;
+}
 /* 原有样式保持不变 */
 .van-dialog {
   max-height: 70vh;
@@ -888,5 +945,26 @@ const saveApprovalSettings = () => {
 .van-cell {
   display: flex;
   align-items: center;
+}
+
+.status-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  font-size: 10px;
+  padding: 2px 4px;
+  margin: 0;
+  border-radius: 0 0 4px 0; /* 只圆角右下角 */
+}
+
+.van-card {
+  position: relative;
+  overflow: hidden; /* 防止标签超出卡片边界 */
+}
+
+.card-header {
+  padding-left: 0; /* 移除之前的左边距 */
+  margin-top: 10px; /* 调整与标签的间距 */
 }
 </style>

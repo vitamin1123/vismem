@@ -166,8 +166,40 @@
     </div>
   </div>
 </template>
+<template v-else>
+  <div class="stats-dialog">
+    <div v-for="(monthData, factory) in statsData" :key="factory" class="stats-block">
+      <h3>{{ factory }}统计</h3>
+      <div v-for="(stats, month) in monthData" :key="month" class="month-block">
+        <h4>{{ month }}月</h4>
+        <div class="stats-grid">
+          <div class="completed-stats">
+            <h5>已完成</h5>
+            <pre>
+{{ factory === '涟钢' && stats.已发运 ? `已发运: ${stats.已发运.toFixed(3)}吨` : '' }}
+{{ stats.已炼钢 ? `已炼钢: ${stats.已炼钢.toFixed(3)}吨` : '' }}
+{{ stats.已轧制 ? `已轧制: ${stats.已轧制.toFixed(3)}吨` : '' }}
+{{ stats.已船检 ? `已船检: ${stats.已船检.toFixed(3)}吨` : '' }}
+{{ stats.已集港 ? `已集港: ${stats.已集港.toFixed(3)}吨` : '' }}
+            </pre>
+          </div>
+          <div class="uncompleted-stats">
+            <h5>未完成</h5>
+            <pre>
+{{ factory !== '涟钢' && stats.未发运 ? `未发运: ${stats.未发运.toFixed(3)}吨` : '' }}
+{{ stats.未炼钢 ? `未炼钢: ${stats.未炼钢.toFixed(3)}吨` : '' }}
+{{ stats.未轧制 ? `未轧制: ${stats.未轧制.toFixed(3)}吨` : '' }}
+{{ stats.未船检 ? `未船检: ${stats.未船检.toFixed(3)}吨` : '' }}
+{{ stats.未集港 ? `未集港: ${stats.未集港.toFixed(3)}吨` : '' }}
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
   <!-- 特变数据模板（原模板） -->
-  <template v-else>
+  <!-- <template v-else>
     <div class="stats-dialog">
       <div v-for="(data, name) in statsData" :key="name" class="stats-block">
         <h4>{{ name }}统计</h4>
@@ -195,7 +227,7 @@
         </div>
       </div>
     </div>
-  </template>
+  </template> -->
     </t-dialog>
     <div class="page-container">
       <!-- 导航栏 -->
@@ -550,32 +582,76 @@ const fileColumns = [
 ];
 
 const statsData = computed(() => {
-  const data = {
-    涟钢: { 已发运: 0 }, 
-    湘钢: { 未发运: 0 }, 
-    首钢: { 未发运: 0 }
-  };
+  const result = {};
   
-
   for (const [factory, items] of Object.entries(rawStatsData.value)) {
     if (!Array.isArray(items)) continue;
     
+    // 初始化厂商数据
+    if (!result[factory]) {
+      result[factory] = {};
+    }
+    
     items.forEach(item => {
-      if (factory === '涟钢') {
-        data.涟钢.已发运 += Number(item.已发运) || 0;
-      } else {
-        data[factory].未发运 += Number(item.未发运) || 0;
+      // 获取月份，如果没有则设为"未知"
+      const month = item.月份 || "未知";
+      
+      // 初始化该月份的数据
+      if (!result[factory][month]) {
+        result[factory][month] = {
+          已发运: 0,
+          未发运: 0,
+          未炼钢: 0,
+          未轧制: 0,
+          未船检: 0,
+          未集港: 0
+        };
       }
       
-      data[factory].未炼钢 = (data[factory].未炼钢 || 0) + (Number(item.未炼钢) || 0);
-      data[factory].未轧制 = (data[factory].未轧制 || 0) + (Number(item.未轧制) || 0);
-      data[factory].未船检 = (data[factory].未船检 || 0) + (Number(item.未船检) || 0);
-      data[factory].未集港 = (data[factory].未集港 || 0) + (Number(item.未集港) || 0);
+      // 累加数据
+      if (factory === '涟钢') {
+        result[factory][month].已发运 += Number(item.已发运) || 0;
+      } else {
+        result[factory][month].未发运 += Number(item.未发运) || 0;
+      }
+      
+      result[factory][month].未炼钢 += Number(item.未炼钢) || 0;
+      result[factory][month].未轧制 += Number(item.未轧制) || 0;
+      result[factory][month].未船检 += Number(item.未船检) || 0;
+      result[factory][month].未集港 += Number(item.未集港) || 0;
     });
   }
   
-  return data;
+  return result;
 });
+
+// const statsData = computed(() => {
+//   const data = {
+//     涟钢: { 已发运: 0 }, 
+//     湘钢: { 未发运: 0 }, 
+//     首钢: { 未发运: 0 }
+//   };
+  
+
+//   for (const [factory, items] of Object.entries(rawStatsData.value)) {
+//     if (!Array.isArray(items)) continue;
+    
+//     items.forEach(item => {
+//       if (factory === '涟钢') {
+//         data.涟钢.已发运 += Number(item.已发运) || 0;
+//       } else {
+//         data[factory].未发运 += Number(item.未发运) || 0;
+//       }
+      
+//       data[factory].未炼钢 = (data[factory].未炼钢 || 0) + (Number(item.未炼钢) || 0);
+//       data[factory].未轧制 = (data[factory].未轧制 || 0) + (Number(item.未轧制) || 0);
+//       data[factory].未船检 = (data[factory].未船检 || 0) + (Number(item.未船检) || 0);
+//       data[factory].未集港 = (data[factory].未集港 || 0) + (Number(item.未集港) || 0);
+//     });
+//   }
+  
+//   return data;
+// });
 
 // 方法
 const handleCompanyChange = (data) => {
@@ -850,6 +926,7 @@ const up_extract_data = async () => {
   try {
         let dataToSend;
         let dataToSendAll;
+        let orderMonth = ''; 
         // Determine which data to send based on current company
         if (currentCompany.value === '卫源') {
           if (!weiyuanData.value) {
@@ -858,6 +935,10 @@ const up_extract_data = async () => {
           }
           dataToSend = weiyuanData.value;
           dataToSendAll = weiyuanData_detail.value;
+          const months = Object.keys(dataToSend);
+          if (months.length > 0) {
+            orderMonth = months[0].replace('月', ''); // Extract "3" from "3月"
+          }
         } else if (currentCompany.value === '中船') {
           if (!zhongchuanData.value) {
             MessagePlugin.warning('没有可提交的中船数据');
@@ -865,6 +946,7 @@ const up_extract_data = async () => {
           }
           dataToSend = zhongchuanData.value;
           dataToSendAll = zhongchuanData_detail.value;
+          orderMonth = Object.keys(dataToSend)[0] || '';
         } else if (currentCompany.value === '朗度') {
           if (!langduData.value) {
             MessagePlugin.warning('没有可提交的朗度数据');
@@ -872,6 +954,7 @@ const up_extract_data = async () => {
           }
           dataToSend = langduData.value;
           dataToSendAll = langduData_detail.value;
+          orderMonth = Object.keys(dataToSend)[0] || '';
         }else if (currentCompany.value === '德瑞斯') {
           if (!deruisiData.value) {
             MessagePlugin.warning('没有可提交的德瑞斯数据');
@@ -879,6 +962,7 @@ const up_extract_data = async () => {
           }
           dataToSend = deruisiData.value;
           dataToSendAll = deruisiData_detail.value;
+          orderMonth = Object.keys(dataToSend)[0] || '';
         }else if (currentCompany.value === '兴澄') {
           if (!xingchengData.value) {
             MessagePlugin.warning('没有可提交的兴澄数据');
@@ -886,6 +970,7 @@ const up_extract_data = async () => {
           }
           dataToSend = xingchengData.value;
           dataToSendAll = xingchengData_detail.value;
+          orderMonth = Object.keys(dataToSend)[0] || '';
         }else if (currentCompany.value === '三鼎') {
           if (!sandingData.value) {
             MessagePlugin.warning('没有可提交的三鼎数据');
@@ -893,6 +978,11 @@ const up_extract_data = async () => {
           }
           dataToSend = sandingData.value;
           dataToSendAll = sandingData_detail.value;
+          if (sandingData.value.length > 0) {
+            // Find the maximum month in the array
+            const months = sandingData.value.map(item => parseInt(item.月份));
+            orderMonth = Math.max(...months).toString();
+          }
         }else if (currentCompany.value === '沙钢') {
           if (!shagangData.value) {
             MessagePlugin.warning('没有可提交的沙钢数据');
@@ -901,18 +991,30 @@ const up_extract_data = async () => {
           dataToSend = shagangData.value;
           dataToSendAll = shagangData_detail.value;
         }else {
-          // For other companies (特变 etc.)
+          // 特变 
           if (!statsData.value) {
             MessagePlugin.warning('没有可提交的数据');
             return;
           }
           dataToSendAll = rawStatsData.value;
           dataToSend = statsData.value;
+          const allMonths = [];
+          for (const factoryData of Object.values(dataToSend)) {
+            for (const month of Object.keys(factoryData)) {
+              if (month !== "未知") {
+                allMonths.push(parseInt(month));
+              }
+            }
+          }
+          if (allMonths.length > 0) {
+            orderMonth = Math.max(...allMonths).toString();
+          }
         }
         const uploadResponse = await apiClient.post('/api/upload_extract', {
           company: currentCompany.value,
           data: JSON.stringify(dataToSend),
           data_huizong: JSON.stringify(dataToSendAll),
+          order_month: orderMonth || '0'
         });
         
         if (uploadResponse.data.success) {

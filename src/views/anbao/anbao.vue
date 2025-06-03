@@ -12,7 +12,19 @@
               :text="item.title"
               :icon="item.icon"
               @click="handleMenuClick(item.path)"
-            />
+            >
+              <template #icon>
+                <div class="badge-container">
+                  <van-icon :name="item.icon" />
+                  <van-badge 
+                    :content="item.badge" 
+                    color="#ee0a24" 
+                    v-if="item.badge" 
+                    class="menu-badge"
+                  />
+                </div>
+              </template>
+            </van-grid-item>
           </van-grid>
         </div>
       </div>
@@ -20,12 +32,14 @@
   </template>
   
   <script setup>
-  import { ref, computed } from 'vue';
-  import { useRouter } from 'vue-router';
-  import { NavBar, Grid, GridItem, NoticeBar } from 'vant';
-  import { useAuthStore } from '@/store/authStore'
-  const user = useAuthStore();
-  const router = useRouter();
+  import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { NavBar, Grid, GridItem, NoticeBar, Badge } from 'vant';
+import { useAuthStore } from '@/store/authStore'
+import apiClient from '@/plugins/axios'
+
+const user = useAuthStore();
+const router = useRouter();
   
   // 菜单数据
   const menuItems = ref([
@@ -54,6 +68,19 @@
   const handleMenuClick = (path) => {
     router.push(path);
   };
+  
+  // 组件挂载时获取待办数量
+  onMounted(async () => {
+    try {
+      const response = await apiClient.post('/api/todocnt');
+      console.log('待办数量:', response.data);
+      // 提取自备工具的待办数量
+      const selfToolTodo = response.data.data.find(item => item.form === 'selftool')?.cnt || 0;
+      menuItems.value.find(item => item.path === '/self-tool-list').badge = selfToolTodo;
+    } catch (error) {
+      console.error('获取待办数量失败:', error);
+    }
+  });
   </script>
   
   <style scoped>
@@ -79,5 +106,17 @@
   :deep(.van-grid-item__text) {
     font-size: 14px;
     margin-top: 8px;
+  }
+  
+  .badge-container {
+    position: relative;
+    display: inline-block;
+  }
+  
+  .menu-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    z-index: 1;
   }
   </style>

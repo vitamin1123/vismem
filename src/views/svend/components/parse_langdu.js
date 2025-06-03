@@ -81,98 +81,366 @@ function parseMergedHeaders(sheet) {
   };
 }
 
+function parseChonggangSheet(sheet) {
+  if (!sheet['!ref']) {
+    throw new Error('无效的工作表，缺少范围定义');
+  }
+
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  const headerRow = 0; // 表头在第一行
+  const dataStartRow = 1; // 数据从第二行开始
+
+  // 定义重钢表格的列名和对应的索引
+  const chonggangColumns = {
+    '合同月份': null,
+    '牌号': null,
+    '订厚(mm)': null,
+    '订宽(mm)': null,
+    '订长(mm)': null,
+    '交货地点': null,
+    '状态': null,
+    '准发欠重': null,
+    '已准发重(t)': null,
+    '已出厂重(t)': null
+  };
+
+  // 查找各列的索引位置
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: headerRow, c })];
+    if (cell) {
+      const header = String(cell.v || '').trim();
+      if (chonggangColumns.hasOwnProperty(header)) {
+        chonggangColumns[header] = c;
+      }
+    }
+  }
+
+  // 检查是否所有必需的列都找到了
+  for (const [colName, index] of Object.entries(chonggangColumns)) {
+    if (index === null) {
+      throw new Error(`找不到必需的列: ${colName}`);
+    }
+  }
+
+  const formatNum = (val) => {
+    const num = Number(val);
+    return isNaN(num) ? 0 : parseFloat(num.toFixed(3));
+  };
+
+  const summary = {};
+  const details = [];
+
+  for (let r = dataStartRow; r <= range.e.r; r++) {
+    // 获取单元格值
+    const getValue = (colName) => {
+      const colIndex = chonggangColumns[colName];
+      const cell = sheet[XLSX.utils.encode_cell({ r, c: colIndex })];
+      return cell ? cell.v : null;
+    };
+
+    const contractMonth = getValue('合同月份');
+    const materialCode = getValue('牌号');
+    const thickness = getValue('订厚(mm)');
+    const width = getValue('订宽(mm)');
+    const length = getValue('订长(mm)');
+    const dock = getValue('交货地点');
+    const status = getValue('状态');
+    
+    // 校验关键字段
+    if (!contractMonth || !materialCode || !dock) {
+      continue;
+    }
+    
+    // 提取月份
+    let month = null;
+    if (typeof contractMonth === 'string') {
+      const monthMatch = contractMonth.match(/^(\d{1,2})月?$/);
+      if (monthMatch) {
+        month = String(parseInt(monthMatch[1]));
+      }
+    } else if (contractMonth instanceof Date) {
+      month = String(contractMonth.getMonth() + 1);
+    }
+    
+    // 月份格式不正确则跳过
+    if (!month || !/^[1-9]|1[0-2]$/.test(month)) {
+      continue;
+    }
+    
+    // 码头为空则跳过
+    if (typeof dock !== 'string' || dock.trim() === '') {
+      continue;
+    }
+    
+    // 初始化汇总结构
+    if (!summary[month]) summary[month] = {};
+    if (!summary[month][dock]) {
+      summary[month][dock] = {
+        未炼钢: 0,
+        已轧制: 0,
+        已船检: 0,
+        已集港: 0,
+        已发运: 0,
+        合同数: 0
+      };
+    }
+    
+    // 获取重量值
+    const shortageWeight = formatNum(getValue('准发欠重'));
+    const approvedWeight = formatNum(getValue('已准发重(t)'));
+    const shippedWeight = formatNum(getValue('已出厂重(t)'));
+    
+    // 根据状态判断数据归属
+    let unsteel = 0;
+    let rolled = 0;
+    let inspected = 0;
+    let gathered = 0;
+    let shipped = 0;
+    
+    // 状态为41_[材料申请]有欠量
+    if (status && status.includes('41_')) {
+      unsteel = shortageWeight;
+      inspected = approvedWeight;
+      gathered = approvedWeight;
+      shipped = shippedWeight;
+    }
+    // 状态为52_,55_,5X_,5Z_,67_,77_,87_
+    else if (status && (
+      status.includes('52_') || 
+      status.includes('55_') || 
+      status.includes('5X_') || 
+      status.includes('5Z_') || 
+      status.includes('67_') || 
+      status.includes('77_') || 
+      status.includes('87_')
+    )) {
+      rolled = approvedWeight;
+      inspected = approvedWeight;
+      gathered = approvedWeight;
+      shipped = shippedWeight;
+    }
+    
+    // 累加汇总数据
+    const target = summary[month][dock];
+    target.未炼钢 = formatNum(target.未炼钢 + unsteel);
+    target.已轧制 = formatNum(target.已轧制 + rolled);
+    target.已船检 = formatNum(target.已船检 + inspected);
+    target.已集港 = formatNum(target.已集港 + gathered);
+    target.已发运 = formatNum(target.已发运 + shipped);
+    target.合同数++;
+
+    // 添加明细数据
+    details.push({
+      月份: month,
+      码头: dock.trim(),
+      合同号: '', // 重钢数据中没有合同号
+      牌号材质代码: materialCode,
+      尺寸: `${thickness || ''}×${width || ''}×${length || ''}`,
+      合同月份: contractMonth instanceof Date ? 
+        contractMonth.toISOString().split('T')[0] : 
+        contractMonth.toString().trim(),
+      未计划重量: 0,
+      未下炼钢重量: 0,
+      未炼钢合计: unsteel,
+      轧钢完成重量: rolled,
+      成品在库重量: 0,
+      出库结束重量: 0,
+      已船检合计: inspected,
+      已集港: gathered,
+      已发运: shipped
+    });
+  }
+
+  return { summary, details };
+}
+
 export async function langdu(file) {
   try {
     // 1. 读取Excel文件
     const workbook = await readExcelFile(file);
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
     
-    if (!sheet) {
-      throw new Error(`找不到工作表: ${sheetName}`);
+    // 处理营口数据
+    const yingkouSheetName = workbook.SheetNames.find(name => name.includes('营口'));
+    const chonggangSheetName = workbook.SheetNames.find(name => name.includes('重钢'));
+    
+    if (!yingkouSheetName && !chonggangSheetName) {
+      throw new Error('找不到营口或重钢工作表');
     }
 
-    // 2. 解析表头
-    const { columns, dataStartRow } = parseMergedHeaders(sheet);
-    
-    // 3. 定义需要提取的列
-    const targetColumns = {
-      '合同号': '合同号 > 合同号 > 合同号',
-      '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
-      '尺寸': '尺寸 > 尺寸 > 尺寸',
-      '合同月份': '合同月份 > 合同月份 > 合同月份',
-      '码头': '码头 > 码头 > 码头',
-      '未计划重量': '坯料设计 > 未计划 > 重量',
-      '未下炼钢重量': '坯料进程 > 未下炼钢 > 重量',
-      '轧钢完成重量': '轧钢完成 > 轧钢完成 > 重量',
-      '成品在库重量': '成品在库 > 成品在库 > 重量',
-      '出库结束重量': '出库结束 > 出库结束 > 重量',
-      '已发运重量': '发运 > 发运 > 重量'
-    };
+    let yingkouResult = { summary: {}, details: [] };
+    let chonggangResult = { summary: {}, details: [] };
 
-    // 4. 构建列索引
-    const colIndex = {};
-    for (const [colName, fullPath] of Object.entries(targetColumns)) {
-      const col = columns.find(c => c.fullPath === fullPath);
-      if (!col) throw new Error(`找不到列: ${fullPath}`);
-      colIndex[colName] = col.index;
-    }
+    // 处理营口sheet
+    if (yingkouSheetName) {
+      const yingkouSheet = workbook.Sheets[yingkouSheetName];
+      
+      if (!yingkouSheet) {
+        throw new Error(`找不到工作表: ${yingkouSheetName}`);
+      }
 
-    // 5. 处理数据汇总和明细
-    const range = XLSX.utils.decode_range(sheet['!ref']);
-    const summary = {};
-    const details = [];
-    
-    // 改进的数值处理函数（处理负数，保留3位小数）
-    const formatNum = (val) => {
-      const num = Number(val);
-      // 允许负数存在，只过滤NaN情况
-      return isNaN(num) ? 0 : parseFloat(num.toFixed(3));
-    };
-
-    for (let r = dataStartRow; r <= range.e.r; r++) {
-      // 获取单元格值
-      const getValue = (colName) => {
-        const cell = sheet[XLSX.utils.encode_cell({ r, c: colIndex[colName] })];
-        return cell ? cell.v : null;
+      // 2. 解析表头
+      const { columns, dataStartRow } = parseMergedHeaders(yingkouSheet);
+      
+      // 3. 定义需要提取的列
+      const targetColumns = {
+        '合同号': '合同号 > 合同号 > 合同号',
+        '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
+        '尺寸': '尺寸 > 尺寸 > 尺寸',
+        '合同月份': '合同月份 > 合同月份 > 合同月份',
+        '码头': '码头 > 码头 > 码头',
+        '未计划重量': '坯料设计 > 未计划 > 重量',
+        '未下炼钢重量': '坯料进程 > 未下炼钢 > 重量',
+        '轧钢完成重量': '轧钢完成 > 轧钢完成 > 重量',
+        '成品在库重量': '成品在库 > 成品在库 > 重量',
+        '出库结束重量': '出库结束 > 出库结束 > 重量',
+        '已发运重量': '发运 > 发运 > 重量'
       };
 
-      const contractNo = getValue('合同号');
-      const materialCode = getValue('牌号/材质代码');
-      const size = getValue('尺寸');
-      const contractMonth = getValue('合同月份');
-      const dock = getValue('码头');
-      
-      // 严格校验关键字段
-      if (!contractNo || !materialCode || !size || !contractMonth || !dock) {
-        continue;
+      // 4. 构建列索引
+      const colIndex = {};
+      for (const [colName, fullPath] of Object.entries(targetColumns)) {
+        const col = columns.find(c => c.fullPath === fullPath);
+        if (!col) throw new Error(`找不到列: ${fullPath}`);
+        colIndex[colName] = col.index;
       }
+
+      // 5. 处理数据汇总和明细
+      const range = XLSX.utils.decode_range(yingkouSheet['!ref']);
       
-      // 提取月份（严格校验）
-      let month = null;
-      if (typeof contractMonth === 'string') {
-        const monthMatch = contractMonth.match(/^(\d{1,2})月?$/);
-        if (monthMatch) {
-          month = String(parseInt(monthMatch[1]));
+      // 改进的数值处理函数（处理负数，保留3位小数）
+      const formatNum = (val) => {
+        const num = Number(val);
+        return isNaN(num) ? 0 : parseFloat(num.toFixed(3));
+      };
+
+      for (let r = dataStartRow; r <= range.e.r; r++) {
+        // 获取单元格值
+        const getValue = (colName) => {
+          const cell = yingkouSheet[XLSX.utils.encode_cell({ r, c: colIndex[colName] })];
+          return cell ? cell.v : null;
+        };
+
+        const contractNo = getValue('合同号');
+        const materialCode = getValue('牌号/材质代码');
+        const size = getValue('尺寸');
+        const contractMonth = getValue('合同月份');
+        const dock = getValue('码头');
+        
+        // 严格校验关键字段
+        if (!contractNo || !materialCode || !size || !contractMonth || !dock) {
+          continue;
         }
-      } else if (contractMonth instanceof Date) {
-        month = String(contractMonth.getMonth() + 1);
+        
+        // 提取月份（严格校验）
+        let month = null;
+        if (typeof contractMonth === 'string') {
+          const monthMatch = contractMonth.match(/^(\d{1,2})月?$/);
+          if (monthMatch) {
+            month = String(parseInt(monthMatch[1]));
+          }
+        } else if (contractMonth instanceof Date) {
+          month = String(contractMonth.getMonth() + 1);
+        }
+        
+        // 月份格式不正确则跳过
+        if (!month || !/^[1-9]|1[0-2]$/.test(month)) {
+          continue;
+        }
+        
+        // 码头为空则跳过
+        if (typeof dock !== 'string' || dock.trim() === '') {
+          continue;
+        }
+        
+        // 初始化汇总结构
+        if (!yingkouResult.summary[month]) yingkouResult.summary[month] = {};
+        if (!yingkouResult.summary[month][dock]) {
+          yingkouResult.summary[month][dock] = {
+            未炼钢: 0,
+            已轧制: 0,
+            已船检: 0,
+            已集港: 0,
+            已发运: 0,
+            合同数: 0
+          };
+        }
+        
+        // 获取各重量值（允许负数）
+        const unplanned = formatNum(getValue('未计划重量'));
+        const unsteeled = formatNum(getValue('未下炼钢重量'));
+        const rolled = formatNum(getValue('轧钢完成重量'));
+        const inStock = formatNum(getValue('成品在库重量'));
+        const outbound = formatNum(getValue('出库结束重量'));
+        const shipped = formatNum(getValue('已发运重量'));
+        
+        // 计算组合值（保持原始正负值）
+        const unsteelTotal = formatNum(unplanned + unsteeled); // 未炼钢 = 未计划 + 未下炼钢
+        const inspected = formatNum(inStock + outbound);      // 已船检 = 成品在库 + 出库结束
+        const gathered = outbound;                           // 已集港 = 出库结束
+        
+        // 累加汇总数据（保留原始正负值）
+        const target = yingkouResult.summary[month][dock];
+        target.未炼钢 = formatNum(target.未炼钢 + unsteelTotal);
+        target.已轧制 = formatNum(target.已轧制 + rolled);
+        target.已船检 = formatNum(target.已船检 + inspected);
+        target.已集港 = formatNum(target.已集港 + gathered);
+        target.已发运 = formatNum(target.已发运 + shipped);
+        target.合同数++;
+
+        // 添加明细数据（保留原始正负值）
+        yingkouResult.details.push({
+          月份: month,
+          码头: dock.trim(),
+          合同号: contractNo,
+          牌号材质代码: materialCode,
+          尺寸: size,
+          合同月份: contractMonth instanceof Date ? 
+            contractMonth.toISOString().split('T')[0] : 
+            contractMonth.toString().trim(),
+          未计划重量: unplanned,
+          未下炼钢重量: unsteeled,
+          未炼钢合计: unsteelTotal,
+          轧钢完成重量: rolled,
+          成品在库重量: inStock,
+          出库结束重量: outbound,
+          已船检合计: inspected,
+          已集港: gathered,
+          已发运: shipped
+        });
       }
+    }
+
+    // 处理重钢sheet
+    if (chonggangSheetName) {
+      const chonggangSheet = workbook.Sheets[chonggangSheetName];
       
-      // 月份格式不正确则跳过
-      if (!month || !/^[1-9]|1[0-2]$/.test(month)) {
-        continue;
+      if (!chonggangSheet) {
+        throw new Error(`找不到工作表: ${chonggangSheetName}`);
       }
+
+      chonggangResult = parseChonggangSheet(chonggangSheet);
+    }
+
+    // 合并两个sheet的数据
+    const mergedSummary = {};
+    const mergedDetails = [...yingkouResult.details, ...chonggangResult.details];
+
+    // 合并营口和重钢的summary
+    const allMonths = new Set([
+      ...Object.keys(yingkouResult.summary),
+      ...Object.keys(chonggangResult.summary)
+    ]);
+
+    for (const month of allMonths) {
+      mergedSummary[month] = {};
       
-      // 码头为空则跳过
-      if (typeof dock !== 'string' || dock.trim() === '') {
-        continue;
-      }
+      // 合并码头数据
+      const yingkouDocks = yingkouResult.summary[month] ? Object.keys(yingkouResult.summary[month]) : [];
+      const chonggangDocks = chonggangResult.summary[month] ? Object.keys(chonggangResult.summary[month]) : [];
+      const allDocks = new Set([...yingkouDocks, ...chonggangDocks]);
       
-      // 初始化汇总结构
-      if (!summary[month]) summary[month] = {};
-      if (!summary[month][dock]) {
-        summary[month][dock] = {
+      for (const dock of allDocks) {
+        mergedSummary[month][dock] = {
           未炼钢: 0,
           已轧制: 0,
           已船检: 0,
@@ -180,64 +448,51 @@ export async function langdu(file) {
           已发运: 0,
           合同数: 0
         };
+        
+        // 累加营口数据
+        if (yingkouResult.summary[month] && yingkouResult.summary[month][dock]) {
+          const ykData = yingkouResult.summary[month][dock];
+          mergedSummary[month][dock].未炼钢 += ykData.未炼钢;
+          mergedSummary[month][dock].已轧制 += ykData.已轧制;
+          mergedSummary[month][dock].已船检 += ykData.已船检;
+          mergedSummary[month][dock].已集港 += ykData.已集港;
+          mergedSummary[month][dock].已发运 += ykData.已发运;
+          mergedSummary[month][dock].合同数 += ykData.合同数;
+        }
+        
+        // 累加重钢数据
+        if (chonggangResult.summary[month] && chonggangResult.summary[month][dock]) {
+          const cgData = chonggangResult.summary[month][dock];
+          mergedSummary[month][dock].未炼钢 += cgData.未炼钢;
+          mergedSummary[month][dock].已轧制 += cgData.已轧制;
+          mergedSummary[month][dock].已船检 += cgData.已船检;
+          mergedSummary[month][dock].已集港 += cgData.已集港;
+          mergedSummary[month][dock].已发运 += cgData.已发运;
+          mergedSummary[month][dock].合同数 += cgData.合同数;
+        }
+        
+        // 格式化数字
+        mergedSummary[month][dock].未炼钢 = parseFloat(mergedSummary[month][dock].未炼钢.toFixed(3));
+        mergedSummary[month][dock].已轧制 = parseFloat(mergedSummary[month][dock].已轧制.toFixed(3));
+        mergedSummary[month][dock].已船检 = parseFloat(mergedSummary[month][dock].已船检.toFixed(3));
+        mergedSummary[month][dock].已集港 = parseFloat(mergedSummary[month][dock].已集港.toFixed(3));
+        mergedSummary[month][dock].已发运 = parseFloat(mergedSummary[month][dock].已发运.toFixed(3));
       }
-      
-      // 获取各重量值（允许负数）
-      const unplanned = formatNum(getValue('未计划重量'));
-      const unsteeled = formatNum(getValue('未下炼钢重量'));
-      const rolled = formatNum(getValue('轧钢完成重量'));
-      const inStock = formatNum(getValue('成品在库重量'));
-      const outbound = formatNum(getValue('出库结束重量'));
-      const shipped = formatNum(getValue('已发运重量'));
-      
-      // 计算组合值（保持原始正负值）
-      const unsteelTotal = formatNum(unplanned + unsteeled); // 未炼钢 = 未计划 + 未下炼钢
-      const inspected = formatNum(inStock + outbound);      // 已船检 = 成品在库 + 出库结束
-      const gathered = outbound;                           // 已集港 = 出库结束
-      // 已发运直接使用 shipped 值
-      
-      // 累加汇总数据（保留原始正负值）
-      const target = summary[month][dock];
-      target.未炼钢 = formatNum(target.未炼钢 + unsteelTotal);
-      target.已轧制 = formatNum(target.已轧制 + rolled);
-      target.已船检 = formatNum(target.已船检 + inspected);
-      target.已集港 = formatNum(target.已集港 + gathered);
-      target.已发运 = formatNum(target.已发运 + shipped);
-      target.合同数++;
-
-      // 添加明细数据（保留原始正负值）
-      details.push({
-        月份: month,
-        码头: dock.trim(),
-        合同号: contractNo,
-        牌号材质代码: materialCode,
-        尺寸: size,
-        合同月份: contractMonth instanceof Date ? 
-          contractMonth.toISOString().split('T')[0] : 
-          contractMonth.toString().trim(),
-        未计划重量: unplanned,
-        未下炼钢重量: unsteeled,
-        未炼钢合计: unsteelTotal,
-        轧钢完成重量: rolled,
-        成品在库重量: inStock,
-        出库结束重量: outbound,
-        已船检合计: inspected,
-        已集港: gathered,
-        已发运: shipped
-      });
     }
 
     // 如果没有数据，抛出错误
-    if (Object.keys(summary).length === 0 || details.length === 0) {
+    if (Object.keys(mergedSummary).length === 0 || mergedDetails.length === 0) {
       throw new Error('未找到有效数据，请检查文件格式是否符合要求');
     }
 
     return {
       success: true,
-      summary: summary,
-      details: details,
-      columns: colIndex,
-      sheetName: sheetName
+      summary: mergedSummary,
+      details: mergedDetails,
+      sheetNames: {
+        yingkou: yingkouSheetName,
+        chonggang: chonggangSheetName
+      }
     };
 
   } catch (error) {
