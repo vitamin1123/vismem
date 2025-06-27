@@ -82,10 +82,10 @@
           <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
             <h4>{{ dock }}</h4>
             <pre>
-未炼钢: {{ stats.未炼钢?.toFixed(3) || '0.0' }}吨
-未轧制: {{ stats.未轧制?.toFixed(3) || '0.0' }}吨
-未船检: {{ stats.未船检?.toFixed(3) || '0.0' }}吨
-未集港: {{ stats.未集港?.toFixed(3) || '0.0' }}吨
+已炼钢: {{ stats.已炼钢?.toFixed(3) || '0.0' }}吨
+已轧制: {{ stats.已轧制?.toFixed(3) || '0.0' }}吨
+已船检: {{ stats.已船检?.toFixed(3) || '0.0' }}吨
+已集港: {{ stats.已集港?.toFixed(3) || '0.0' }}吨
 已发运: {{ stats.已发运?.toFixed(3) || '0.0' }}吨
 未发运: {{ stats.未发运?.toFixed(3) || '0.0' }}吨
             </pre>

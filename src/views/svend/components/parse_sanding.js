@@ -131,24 +131,36 @@ export async function sanding(file) {
         continue;
       }
 
-      // 月份提取逻辑
+      // 新的合同号月份提取逻辑（支持字母代表月份）
       let month = '';
       try {
-        const contractStr = String(contractNo);
-        if (contractStr.length >= 10) {
-          const monthPart = contractStr.substring(7, 10);
-          const monthNum = parseInt(monthPart, 10);
-          
-          if (monthNum >= 10 && monthNum <= 120 && monthNum % 10 === 0) {
-            month = (monthNum / 10).toString();
-          } else {
-            throw new Error('Invalid month format');
-          }
+        const contractStr = String(contractNo).trim().toUpperCase();
+        if (contractStr.length < 4) {
+          throw new Error('合同号长度不足');
+        }
+        
+        // 检查年份部分（第2-3位）
+        const yearPart = contractStr.substring(1, 3);
+        if (!/^\d{2}$/.test(yearPart)) {
+          throw new Error('年份部分不是两位数字');
+        }
+
+        // 提取月份部分（第4位）
+        const monthChar = contractStr.charAt(3);
+        
+        // 月份映射：1-9月用数字，10-12月用字母A-C
+        const monthMap = {
+          '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, 
+          '7': 7, '8': 8, '9': 9, 'A': 10, 'B': 11, 'C': 12
+        };
+        
+        if (monthMap.hasOwnProperty(monthChar)) {
+          month = String(monthMap[monthChar]);
         } else {
-          throw new Error('Contract number too short');
+          throw new Error(`无效的月份标识: ${monthChar}`);
         }
       } catch (error) {
-        console.warn(`行${r + 1} 合同号月份提取失败: ${contractNo}`);
+        console.warn(`行${r + 1} 合同号月份提取失败: ${contractNo}，原因：${error.message}`);
         continue;
       }
 

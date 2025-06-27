@@ -99,6 +99,7 @@ function parseChonggangSheet(sheet) {
     '订长(mm)': null,
     '交货地点': null,
     '状态': null,
+    '订重(t)': null, // 新增订重列
     '准发欠重': null,
     '已准发重(t)': null,
     '已出厂重(t)': null
@@ -116,15 +117,18 @@ function parseChonggangSheet(sheet) {
   }
 
   // 检查是否所有必需的列都找到了
-  for (const [colName, index] of Object.entries(chonggangColumns)) {
-    if (index === null) {
+  const requiredColumns = ['合同月份', '牌号', '交货地点', '状态', '订重(t)', '准发欠重', '已准发重(t)', '已出厂重(t)'];
+  for (const colName of requiredColumns) {
+    if (chonggangColumns[colName] === null) {
       throw new Error(`找不到必需的列: ${colName}`);
     }
   }
 
+  // 确保数值非负
   const formatNum = (val) => {
     const num = Number(val);
-    return isNaN(num) ? 0 : parseFloat(num.toFixed(3));
+    if (isNaN(num) || num < 0) return 0;
+    return parseFloat(num.toFixed(3));
   };
 
   const summary = {};
@@ -145,6 +149,7 @@ function parseChonggangSheet(sheet) {
     const length = getValue('订长(mm)');
     const dock = getValue('交货地点');
     const status = getValue('状态');
+    const totalWeight = formatNum(getValue('订重(t)'));
     
     // 校验关键字段
     if (!contractMonth || !materialCode || !dock) {
@@ -177,10 +182,12 @@ function parseChonggangSheet(sheet) {
     if (!summary[month][dock]) {
       summary[month][dock] = {
         未炼钢: 0,
-        已轧制: 0,
+        未轧制: 0,
+        已轧制: 0, // 新增已轧制字段
         已船检: 0,
         已集港: 0,
         已发运: 0,
+        总订单量: 0,
         合同数: 0
       };
     }
@@ -192,41 +199,39 @@ function parseChonggangSheet(sheet) {
     
     // 根据状态判断数据归属
     let unsteel = 0;
-    let rolled = 0;
-    let inspected = 0;
-    let gathered = 0;
-    let shipped = 0;
+    let unrolled = 0;
     
-    // 状态为41_[材料申请]有欠量
-    if (status && status.includes('41_')) {
+    // 1. 未炼钢：状态包含"[材料申请]有欠量"
+    if (status && status.includes('[材料申请]有欠量')) {
       unsteel = shortageWeight;
-      inspected = approvedWeight;
-      gathered = approvedWeight;
-      shipped = shippedWeight;
     }
-    // 状态为52_,55_,5X_,5Z_,67_,77_,87_
-    else if (status && (
-      status.includes('52_') || 
-      status.includes('55_') || 
-      status.includes('5X_') || 
-      status.includes('5Z_') || 
-      status.includes('67_') || 
-      status.includes('77_') || 
-      status.includes('87_')
-    )) {
-      rolled = approvedWeight;
-      inspected = approvedWeight;
-      gathered = approvedWeight;
-      shipped = shippedWeight;
+    
+    // 2. 未轧制：状态包含'[材料申请]有欠量'或'炼钢工序配料已满' (根据新要求修改)
+    const unrolledStatuses = [
+      '[材料申请]有欠量',
+      '炼钢工序配料已满'
+    ];
+    
+    if (status && unrolledStatuses.some(s => status.includes(s))) {
+      unrolled = shortageWeight;
     }
+    
+    // 计算已轧制 = 总订重 - 未轧制
+    const rolled = Math.max(0, totalWeight - unrolled);
+    
+    // 3. 已船检：所有行的"已准发重(t)"
+    // 4. 已集港：所有行的"已准发重(t)"
+    // 5. 已发运：所有行的"已出厂重(t)"
     
     // 累加汇总数据
     const target = summary[month][dock];
-    target.未炼钢 = formatNum(target.未炼钢 + unsteel);
-    target.已轧制 = formatNum(target.已轧制 + rolled);
-    target.已船检 = formatNum(target.已船检 + inspected);
-    target.已集港 = formatNum(target.已集港 + gathered);
-    target.已发运 = formatNum(target.已发运 + shipped);
+    target.未炼钢 += unsteel;
+    target.未轧制 += unrolled;
+    target.已轧制 += rolled; // 累加已轧制重量
+    target.已船检 += approvedWeight;
+    target.已集港 += approvedWeight;
+    target.已发运 += shippedWeight;
+    target.总订单量 += totalWeight;
     target.合同数++;
 
     // 添加明细数据
@@ -242,13 +247,29 @@ function parseChonggangSheet(sheet) {
       未计划重量: 0,
       未下炼钢重量: 0,
       未炼钢合计: unsteel,
-      轧钢完成重量: rolled,
+      未轧制合计: unrolled,
+      已轧制合计: rolled, // 新增已轧制字段
       成品在库重量: 0,
       出库结束重量: 0,
-      已船检合计: inspected,
-      已集港: gathered,
-      已发运: shipped
+      已船检合计: approvedWeight,
+      已集港: approvedWeight,
+      已发运: shippedWeight,
+      订重: totalWeight
     });
+  }
+
+  // 最后格式化所有数值
+  for (const month of Object.keys(summary)) {
+    for (const dock of Object.keys(summary[month])) {
+      const target = summary[month][dock];
+      target.未炼钢 = parseFloat(target.未炼钢.toFixed(3));
+      target.未轧制 = parseFloat(target.未轧制.toFixed(3));
+      target.已轧制 = parseFloat(target.已轧制.toFixed(3));
+      target.已船检 = parseFloat(target.已船检.toFixed(3));
+      target.已集港 = parseFloat(target.已集港.toFixed(3));
+      target.已发运 = parseFloat(target.已发运.toFixed(3));
+      target.总订单量 = parseFloat(target.总订单量.toFixed(3));
+    }
   }
 
   return { summary, details };
@@ -281,7 +302,7 @@ export async function langdu(file) {
       // 2. 解析表头
       const { columns, dataStartRow } = parseMergedHeaders(yingkouSheet);
       
-      // 3. 定义需要提取的列
+      // 3. 定义需要提取的列（新增订单量）
       const targetColumns = {
         '合同号': '合同号 > 合同号 > 合同号',
         '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
@@ -293,7 +314,8 @@ export async function langdu(file) {
         '轧钢完成重量': '轧钢完成 > 轧钢完成 > 重量',
         '成品在库重量': '成品在库 > 成品在库 > 重量',
         '出库结束重量': '出库结束 > 出库结束 > 重量',
-        '已发运重量': '发运 > 发运 > 重量'
+        '已发运重量': '发运 > 发运 > 重量',
+        '订单量': '订单量 > 订单量 > 重量' // 新增订单量
       };
 
       // 4. 构建列索引
@@ -307,10 +329,11 @@ export async function langdu(file) {
       // 5. 处理数据汇总和明细
       const range = XLSX.utils.decode_range(yingkouSheet['!ref']);
       
-      // 改进的数值处理函数（处理负数，保留3位小数）
+      // 数值处理函数（确保非负）
       const formatNum = (val) => {
         const num = Number(val);
-        return isNaN(num) ? 0 : parseFloat(num.toFixed(3));
+        if (isNaN(num) || num < 0) return 0;
+        return parseFloat(num.toFixed(3));
       };
 
       for (let r = dataStartRow; r <= range.e.r; r++) {
@@ -325,6 +348,7 @@ export async function langdu(file) {
         const size = getValue('尺寸');
         const contractMonth = getValue('合同月份');
         const dock = getValue('码头');
+        const orderWeight = formatNum(getValue('订单量')); // 新增订单量
         
         // 严格校验关键字段
         if (!contractNo || !materialCode || !size || !contractMonth || !dock) {
@@ -361,11 +385,12 @@ export async function langdu(file) {
             已船检: 0,
             已集港: 0,
             已发运: 0,
+            总订单量: 0,  // 新增总订单量
             合同数: 0
           };
         }
         
-        // 获取各重量值（允许负数）
+        // 获取各重量值（确保非负）
         const unplanned = formatNum(getValue('未计划重量'));
         const unsteeled = formatNum(getValue('未下炼钢重量'));
         const rolled = formatNum(getValue('轧钢完成重量'));
@@ -373,21 +398,22 @@ export async function langdu(file) {
         const outbound = formatNum(getValue('出库结束重量'));
         const shipped = formatNum(getValue('已发运重量'));
         
-        // 计算组合值（保持原始正负值）
+        // 计算组合值（确保非负）
         const unsteelTotal = formatNum(unplanned + unsteeled); // 未炼钢 = 未计划 + 未下炼钢
         const inspected = formatNum(inStock + outbound);      // 已船检 = 成品在库 + 出库结束
         const gathered = outbound;                           // 已集港 = 出库结束
         
-        // 累加汇总数据（保留原始正负值）
+        // 累加汇总数据
         const target = yingkouResult.summary[month][dock];
-        target.未炼钢 = formatNum(target.未炼钢 + unsteelTotal);
-        target.已轧制 = formatNum(target.已轧制 + rolled);
-        target.已船检 = formatNum(target.已船检 + inspected);
-        target.已集港 = formatNum(target.已集港 + gathered);
-        target.已发运 = formatNum(target.已发运 + shipped);
+        target.未炼钢 += unsteelTotal;
+        target.已轧制 += rolled;
+        target.已船检 += inspected;
+        target.已集港 += gathered;
+        target.已发运 += shipped;
+        target.总订单量 += orderWeight;  // 累加订单量
         target.合同数++;
 
-        // 添加明细数据（保留原始正负值）
+        // 添加明细数据
         yingkouResult.details.push({
           月份: month,
           码头: dock.trim(),
@@ -405,8 +431,22 @@ export async function langdu(file) {
           出库结束重量: outbound,
           已船检合计: inspected,
           已集港: gathered,
-          已发运: shipped
+          已发运: shipped,
+          订单量: orderWeight  // 新增订单量
         });
+      }
+
+      // 最后格式化所有数值
+      for (const month of Object.keys(yingkouResult.summary)) {
+        for (const dock of Object.keys(yingkouResult.summary[month])) {
+          const target = yingkouResult.summary[month][dock];
+          target.未炼钢 = parseFloat(target.未炼钢.toFixed(3));
+          target.已轧制 = parseFloat(target.已轧制.toFixed(3));
+          target.已船检 = parseFloat(target.已船检.toFixed(3));
+          target.已集港 = parseFloat(target.已集港.toFixed(3));
+          target.已发运 = parseFloat(target.已发运.toFixed(3));
+          target.总订单量 = parseFloat(target.总订单量.toFixed(3));
+        }
       }
     }
 
@@ -443,9 +483,11 @@ export async function langdu(file) {
         mergedSummary[month][dock] = {
           未炼钢: 0,
           已轧制: 0,
+          未轧制: 0,
           已船检: 0,
           已集港: 0,
           已发运: 0,
+          总订单量: 0,
           合同数: 0
         };
         
@@ -457,6 +499,7 @@ export async function langdu(file) {
           mergedSummary[month][dock].已船检 += ykData.已船检;
           mergedSummary[month][dock].已集港 += ykData.已集港;
           mergedSummary[month][dock].已发运 += ykData.已发运;
+          mergedSummary[month][dock].总订单量 += ykData.总订单量;
           mergedSummary[month][dock].合同数 += ykData.合同数;
         }
         
@@ -464,19 +507,23 @@ export async function langdu(file) {
         if (chonggangResult.summary[month] && chonggangResult.summary[month][dock]) {
           const cgData = chonggangResult.summary[month][dock];
           mergedSummary[month][dock].未炼钢 += cgData.未炼钢;
-          mergedSummary[month][dock].已轧制 += cgData.已轧制;
+          mergedSummary[month][dock].未轧制 += cgData.未轧制;
+          mergedSummary[month][dock].已轧制 += cgData.已轧制; // 累加已轧制重量
           mergedSummary[month][dock].已船检 += cgData.已船检;
           mergedSummary[month][dock].已集港 += cgData.已集港;
           mergedSummary[month][dock].已发运 += cgData.已发运;
+          mergedSummary[month][dock].总订单量 += cgData.总订单量;
           mergedSummary[month][dock].合同数 += cgData.合同数;
         }
         
         // 格式化数字
         mergedSummary[month][dock].未炼钢 = parseFloat(mergedSummary[month][dock].未炼钢.toFixed(3));
         mergedSummary[month][dock].已轧制 = parseFloat(mergedSummary[month][dock].已轧制.toFixed(3));
+        mergedSummary[month][dock].未轧制 = parseFloat(mergedSummary[month][dock].未轧制.toFixed(3));
         mergedSummary[month][dock].已船检 = parseFloat(mergedSummary[month][dock].已船检.toFixed(3));
         mergedSummary[month][dock].已集港 = parseFloat(mergedSummary[month][dock].已集港.toFixed(3));
         mergedSummary[month][dock].已发运 = parseFloat(mergedSummary[month][dock].已发运.toFixed(3));
+        mergedSummary[month][dock].总订单量 = parseFloat(mergedSummary[month][dock].总订单量.toFixed(3));
       }
     }
 
