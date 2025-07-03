@@ -5,6 +5,7 @@ import SvendView from '@/views/svend/svend.vue'
 import loginView from '@/views/login/login.vue'
 import VisMemView from '@/views/VisMemView/VisMem.vue'
 import Anbao from '@/views/anbao/anbao.vue'
+import advice from '@/views/advice/advice.vue'
 import selfToolList from '@/views/anbao/detail/self-tool-list.vue'
 import dutyRecord from '@/views/anbao/detail/duty-record.vue'
 import meetingRecord from '@/views/anbao/detail/meeting-record.vue'
@@ -44,6 +45,14 @@ const router = createRouter({
       component: guest,
       meta: {
         title: '外来人员登记' // 自定义标题
+      }
+    },
+    {
+      path: '/advice',
+      name: 'advice',
+      component: advice,
+      meta: {
+        title: '有事码上说' // 自定义标题
       }
     },
     {
