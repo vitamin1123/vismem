@@ -5,7 +5,7 @@
         <template #title>
           <div class="logo-placeholder">
             <van-image 
-              src="/src/assets/logo.svg" 
+              :src="logo" 
               fit="contain" 
               width="140px" 
               height="40px" 
@@ -65,7 +65,22 @@
           />
         </div>
       </van-cell-group>
-
+      <van-cell-group inset title="上传图片(可选，最多3张)">
+              <van-field name="uploader">
+                <template #input>
+                  <van-uploader
+                    v-model="uploadedImages"
+                    :max-count="3"
+                    :before-read="beforeRead"
+                    @delete="handleDeleteImage"
+                    @failed="handleUploadFailed"
+                    preview-size="80px"
+                    :deletable="true"
+                    :preview-image="true"
+                  />
+                </template>
+              </van-field>
+            </van-cell-group>
       <!-- 是否期望回复 -->
       <van-cell-group inset>
         <van-cell title="是否期望得到回复">
@@ -120,16 +135,21 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
-import { showToast, showFailToast, type FormInstance } from 'vant';
+import { showToast, showFailToast, type FormInstance,  showConfirmDialog  } from 'vant';
 import apiClient from '@/plugins/axios';
-
+import logo from '@/assets/logo.svg';
+import Compressor from 'compressorjs'; // 图片压缩库
+import { v4 as uuidv4 } from 'uuid'; // 用于生成唯一文件名
+import type { UploaderFileListItem } from 'vant';
 // 定义问题类别的数据结构
 interface Category {
   text: string;
   value: string;
   subText?: string;
 }
-
+interface ExtendedUploaderFileListItem extends UploaderFileListItem {
+  serverFile?: string;
+}
 // 表单响应式数据
 const selectedCategory = ref<string>('');
 const suggestionText = ref('');
@@ -146,6 +166,165 @@ const activeNames = ref(['1']); // 默认展开第一个折叠面板
 const barrageList = ref<{ id: number; text: string }[]>([]);
 const allBarrages = ref<{ id: string; text: string }[]>([]); // 存储所有弹幕
 let timer: number | null = null; // 定时器引用
+
+// 图片上传相关
+const uploadedImages = ref<ExtendedUploaderFileListItem[]>([]); 
+const tempImages = ref<string[]>([]); // 存储临时上传的图片文件名
+
+// 图片上传前的处理（压缩和验证）
+const beforeRead = (file: File | File[]): Promise<File | File[]> => {
+  return new Promise((resolve, reject) => {
+    // 处理多个文件的情况
+    if (Array.isArray(file)) {
+      // 递归处理每个文件
+      const processedFiles = file.map(f => processSingleFile(f));
+      Promise.all(processedFiles)
+        .then(resolve)
+        .catch(reject);
+      return;
+    }
+    
+    // 处理单个文件
+    processSingleFile(file).then(resolve).catch(reject);
+  });
+};
+
+// 更新 processSingleFile 方法，明确参数类型为 File
+const processSingleFile = (file: File): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+      showFailToast('请上传图片文件');
+      reject(new Error('文件类型错误'));
+      return;
+    }
+    
+    // 检查文件大小（限制5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      showFailToast('图片大小不能超过5MB');
+      reject(new Error('文件过大'));
+      return;
+    }
+    console.log('原始文件:', file.name, '类型:', file.type, '大小:', file.size);
+    // 显示确认对话框
+    showConfirmDialog({
+      title: '上传图片',
+      message: '确认上传这张图片吗？',
+    })
+    .then(() => {
+      // 使用compressorjs压缩图片
+       new Compressor(file, {
+      quality: 0.6,
+      success(blob) {
+        // 修复: 确保保留原始类型
+        const mimeType = blob.type || file.type;
+        
+        // 调试输出
+        console.log('压缩后类型:', mimeType, '大小:', blob.size);
+        
+        resolve(new File(
+          [blob], 
+          file.name,
+          { type: mimeType } // 保留原始MIME类型
+        ));
+      },
+      error(err) {
+        console.error('压缩错误:', err);
+        reject(new Error('图片处理失败'));
+      }
+      });
+    })
+    .catch(() => {
+      // 用户取消上传
+      reject(new Error('USER_CANCEL'));
+    });
+  });
+};
+
+// 更新 handleUploadFailed 方法
+const handleUploadFailed = (error: any) => {
+  if (error.message === 'USER_CANCEL') {
+    // 用户取消，不显示错误
+    return;
+  }
+  
+  // 显示特定错误信息
+  let message = '图片上传失败';
+  if (error.message === '文件类型错误') message = '请上传图片文件';
+  if (error.message === '文件过大') message = '图片大小不能超过5MB';
+  
+  showFailToast(message);
+};
+
+// 删除图片处理
+const handleDeleteImage = async (file: any, { index }: { index: number }) => {
+  const image = uploadedImages.value[index];
+  
+  if (image.serverFile) {
+    try {
+      // 调用后端删除图片接口
+      await apiClient.post('/api/delete_image', { filename: image.serverFile });
+      
+      // 从临时列表中移除
+      const tempIndex = tempImages.value.indexOf(image.serverFile);
+      if (tempIndex !== -1) {
+        tempImages.value.splice(tempIndex, 1);
+      }
+    } catch (error) {
+      console.error('删除图片失败:', error);
+      showFailToast('删除图片失败');
+    }
+  }
+  
+  // 从上传列表中移除
+  uploadedImages.value.splice(index, 1);
+};
+
+// 上传所有图片到服务器
+const uploadImages = async () => {
+  const uploadedFiles: string[] = [];
+  
+  for (const item of uploadedImages.value) {
+    if (!item.file) continue;
+    
+    try {
+      
+      const formData = new FormData();
+      formData.append('file', item.file);
+      
+      const response = await apiClient.post('/api/upload_image', formData);
+      
+      if (response.data.code === 0) {
+        item.serverFile = response.data.data.filename;
+        uploadedFiles.push(response.data.data.filename);
+      } else {
+        throw new Error(response.data.message);
+      }
+    } catch (error) {
+      console.error('图片上传失败:', error);
+      showFailToast('图片上传失败');
+      throw error; // 中断整个提交
+    }
+  }
+  
+  return uploadedFiles.join('|');
+};
+
+// 清理未提交的图片
+const cleanupUnsubmittedImages = async () => {
+  if (tempImages.value.length === 0) return;
+  
+  try {
+    // 调用后端清理接口
+    await apiClient.post('/api/cleanup_images', { filenames: tempImages.value });
+    console.log('清理未提交图片成功:', tempImages.value);
+  } catch (error) {
+    console.error('清理图片失败:', error);
+  } finally {
+    tempImages.value = [];
+  }
+};
+
 
 // 获取弹幕数据
 const fetchBarrageList = async () => {
@@ -195,6 +374,9 @@ onUnmounted(() => {
     clearInterval(timer);
     timer = null;
   }
+  if (tempImages.value.length > 0) {
+    cleanupUnsubmittedImages();
+  }
 });
 // 添加弹幕
 const addBarrage = () => {
@@ -228,6 +410,7 @@ const categories = ref<Category[]>([
 
 // 表单提交
 const onSubmit = async () => {
+  
   // 验证是否选择了类别
   if (!selectedCategory.value) {
     showFailToast('请选择问题类别');
@@ -254,15 +437,18 @@ const onSubmit = async () => {
       return;
     }
   }
-  
+  let photoField = '';
   try {
     submitting.value = true;
-    
+    if (uploadedImages.value.length > 0) {
+      photoField = await uploadImages();
+    }
     const submitData = {
       category: selectedCategory.value,
       suggestion: suggestionText.value.trim(),
       expectReply: expectReply.value,
       userAgent: navigator.userAgent, // 添加用户UA信息
+      photo: photoField,
       // 仅在期望回复时提交个人信息
       ...(expectReply.value && {
         employeeId: employeeId.value,
@@ -283,7 +469,10 @@ const onSubmit = async () => {
       employeeName.value = '';
       contactInfo.value = '';
       expectReply.value = false;
+      uploadedImages.value = [];
       
+      // 清空临时图片列表（已成功提交）
+      tempImages.value = [];
       // 刷新弹幕列表
       fetchBarrageList();
     } else {
@@ -388,5 +577,19 @@ onMounted(() => {
 
 .barrage-video {
   background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+/* 添加图片上传样式 */
+:deep(.van-uploader__upload) {
+  background-color: #f7f8fa;
+  border: 1px dashed #dcdee0;
+}
+
+:deep(.van-uploader__preview-image) {
+  border-radius: 4px;
+}
+
+:deep(.van-uploader__preview-delete) {
+  background-color: rgba(0, 0, 0, 0.7);
 }
 </style>

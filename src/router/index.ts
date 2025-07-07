@@ -197,7 +197,7 @@ router.beforeEach(async (to, from, next) => {
   // 如果没有 token 并且 authStore 中也没有 token，重定向到 404
   if (!tokenFromQuery && !authStore.token) {
     console.log('确实没有token')
-    if (to.path === '/login' || to.path === '/404') {
+    if (to.path === '/login' || to.path === '/404' || to.path === '/advice') {
       return next()
     }
     // return next({ path: '/404' })
