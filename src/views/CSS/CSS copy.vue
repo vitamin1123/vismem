@@ -140,7 +140,7 @@ const handleMappingFile = async (file: File) => {
   }
 };
 
-// 处理文件 - 替换班组信息
+// 处理文件 - 替换班组信息（保留样式）
 const processFile = async (file: ExcelFile) => {
   file.status = 'processing';
   file.progress = 0;
@@ -160,7 +160,7 @@ const processFile = async (file: ExcelFile) => {
       }
     }, 200) as unknown as number;
     
-    // 读取Excel文件
+    // 读取Excel文件（保留所有样式信息）
     const reader = new FileReader();
     const data = await new Promise<ArrayBuffer>((resolve, reject) => {
       reader.onload = (e) => resolve(e.target?.result as ArrayBuffer);
@@ -168,56 +168,99 @@ const processFile = async (file: ExcelFile) => {
       reader.readAsArrayBuffer(file.rawFile);
     });
     
-    // 处理Excel
-    const workbook = XLSX.read(data, { type: 'array' });
+    // 处理Excel（保留原始样式）
+    const workbook = XLSX.read(data, { type: 'array', cellStyles: true });
     
     // 处理每个工作表
     workbook.SheetNames.forEach(sheetName => {
       const worksheet = workbook.Sheets[sheetName];
-      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+      if (!worksheet['!ref']) return;
+      
+      // 解析工作表范围
+      const range = XLSX.utils.decode_range(worksheet['!ref']);
       
       // 处理表头行 (第一行)
-      if (jsonData.length > 0) {
-        const headerRow = jsonData[0];
-        // 从第9列(I列)开始处理
-        for (let col = 8; col < headerRow.length; col++) {
-          if (typeof headerRow[col] === 'string') {
-            // 移除非汉字字符
-            headerRow[col] = headerRow[col].replace(/[^\u4e00-\u9fa5]/g, '');
-          }
+      for (let col = 8; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        const cell = worksheet[cellAddress];
+        
+        if (cell && cell.v && typeof cell.v === 'string') {
+          // 移除非汉字字符（保留原始样式）
+          const originalStyle = cell.s; // 保存原始样式
+          cell.v = cell.v.replace(/[^\u4e00-\u9fa5]/g, '');
+          cell.s = originalStyle; // 恢复原始样式
+          delete cell.w; // 删除格式化的文本值，让Excel重新生成
         }
       }
       
       // 处理数据行 (从第三行开始)
-      for (let rowIndex = 2; rowIndex < jsonData.length; rowIndex++) {
-        const row = jsonData[rowIndex];
-        if (row.length < 4) continue; // 确保有足够的列
+      for (let row = 2; row <= range.e.r; row++) {
+        // 获取C列单元格
+        const cCellAddress = XLSX.utils.encode_cell({ r: row, c: 2 });
+        const cCell = worksheet[cCellAddress];
         
-        const oldCode = row[2]; // C列
-        if (oldCode && mappingData.value.has(oldCode)) {
-          const mapping = mappingData.value.get(oldCode)!;
+        if (cCell && cCell.v && mappingData.value.has(cCell.v)) {
+          const mapping = mappingData.value.get(cCell.v)!;
           
           // 检查是否应该替换
-          if (mapping.code === '无' || mapping.code === '已取消该班组' || mapping.code === '不录入工时' || mapping.code === '不需要') {
-            row[2] = ''; // C列清空
-            row[3] = ''; // D列清空
+          if (mapping.code === '无' || 
+              mapping.code === '已取消该班组' || 
+              mapping.code === '不录入工时' || 
+              mapping.code === '不需要') {
+            // C列清空（保留样式）
+            if (worksheet[cCellAddress]) {
+              const originalStyle = worksheet[cCellAddress].s;
+              worksheet[cCellAddress].v = '';
+              worksheet[cCellAddress].s = originalStyle;
+              delete worksheet[cCellAddress].w;
+            }
+            
+            // D列清空（保留样式）
+            const dCellAddress = XLSX.utils.encode_cell({ r: row, c: 3 });
+            if (worksheet[dCellAddress]) {
+              const originalStyle = worksheet[dCellAddress].s;
+              worksheet[dCellAddress].v = '';
+              worksheet[dCellAddress].s = originalStyle;
+              delete worksheet[dCellAddress].w;
+            }
           } else {
-            row[2] = mapping.code; // 替换C列
-            row[3] = mapping.name; // 替换D列
+            // 替换C列值（保留样式）
+            if (worksheet[cCellAddress]) {
+              const originalStyle = worksheet[cCellAddress].s;
+              worksheet[cCellAddress].v = mapping.code;
+              worksheet[cCellAddress].s = originalStyle;
+              delete worksheet[cCellAddress].w;
+            }
+            
+            // 替换D列值（保留样式）
+            const dCellAddress = XLSX.utils.encode_cell({ r: row, c: 3 });
+            if (worksheet[dCellAddress]) {
+              const originalStyle = worksheet[dCellAddress].s;
+              worksheet[dCellAddress].v = mapping.name;
+              worksheet[dCellAddress].s = originalStyle;
+              delete worksheet[dCellAddress].w;
+            } else {
+              // 如果D列单元格不存在，创建新单元格（使用C列单元格的样式）
+              const styleRef = worksheet[XLSX.utils.encode_cell({ r: row, c: 2 })] || 
+                             worksheet[XLSX.utils.encode_cell({ r: row, c: 1 })] || 
+                             worksheet[XLSX.utils.encode_cell({ r: row, c: 4 })];
+              worksheet[dCellAddress] = {
+                v: mapping.name,
+                t: 's',
+                s: styleRef ? {...styleRef.s} : {} // 复制样式对象
+              };
+            }
           }
         }
       }
-      
-      // 更新工作表
-      const newWorksheet = XLSX.utils.aoa_to_sheet(jsonData);
-      workbook.Sheets[sheetName] = newWorksheet;
     });
     
     // 生成处理后的Excel
     const wbout = XLSX.write(workbook, { 
       bookType: 'xlsx', 
       type: 'array',
-      bookSST: true // 提高大文件性能
+      bookSST: true,
+      cellStyles: true // 保留样式
     });
     const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     
@@ -227,7 +270,7 @@ const processFile = async (file: ExcelFile) => {
     file.progress = 100;
     
     if (interval) clearInterval(interval);
-    MessagePlugin.success(`"${file.name}" 处理完成`);
+    MessagePlugin.success(`"${file.name}" 处理完成（保留原始样式）`);
   } catch (error) {
     console.error('处理文件出错:', error);
     file.status = 'error';
@@ -330,7 +373,7 @@ onMounted(() => {
   <div class="excel-processor-container">
     <header class="app-header">
       <h1>CSS 工作日报 Excel 处理</h1>
-      <p>请先上传对照表，再处理Excel文件</p>
+      <p>请先上传对照表，再处理Excel文件（保留原始样式）</p>
     </header>
     
     <div class="main-content">
@@ -398,6 +441,7 @@ onMounted(() => {
             <li>必须包含名为"YSS1.0"的工作表</li>
             <li>工作表需包含列：1.0班组编码、对应YSS2.0班组代码、对应YSS2.0班组名称</li>
             <li>系统将根据1.0班组编码替换Excel中的班组信息</li>
+            <li>原始Excel的所有样式（合并单元格、颜色、边框等）将被保留</li>
           </ul>
         </div>
       </div>
@@ -518,7 +562,7 @@ onMounted(() => {
                 <div class="file-name">{{ file.name }}</div>
                 <div class="file-status">
                   <t-icon name="check-circle" size="14px" />
-                  <span>班组信息已替换</span>
+                  <span>班组信息已替换（保留样式）</span>
                 </div>
               </div>
             </div>
