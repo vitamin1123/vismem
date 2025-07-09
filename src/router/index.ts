@@ -16,6 +16,7 @@ import securityCheck from '@/views/anbao/detail/security-check.vue'
 import guest from '@/views/anbao/detail/guest.vue'
 import guest_car from '@/views/anbao/detail/guest_car.vue'
 import xunluo from '@/views/anbao/detail/xunluo.vue'
+import weather from '@/views/weather/weather.vue'
 import css from '@/views/CSS/CSS.vue'
 import apiClient from '@/plugins/axios'
 
@@ -70,6 +71,14 @@ const router = createRouter({
       component: guest_car,
       meta: {
         title: '外来车辆登记' // 自定义标题
+      }
+    },
+     {
+      path: '/weather',
+      name: 'weather',
+      component: weather,
+      meta: {
+        title: '气象信息' // 自定义标题
       }
     },
     {
@@ -206,7 +215,7 @@ router.beforeEach(async (to, from, next) => {
   // 如果没有 token 并且 authStore 中也没有 token，重定向到 404
   if (!tokenFromQuery && !authStore.token) {
     console.log('确实没有token')
-    if (to.path === '/login' || to.path === '/404' || to.path === '/advice' || to.path === '/css') {
+    if (to.path === '/login' || to.path === '/404' || to.path === '/advice' || to.path === '/css' || to.path ==='weather') {
       return next()
     }
     // return next({ path: '/404' })
