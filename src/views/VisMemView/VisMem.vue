@@ -410,7 +410,7 @@ const submitPost = async () => {
       }
     });
 
-    const response = await apiClient.post('/api/submit_post', formData, {
+    const response = await apiClient.post('/api/submit_nagezhiban', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
