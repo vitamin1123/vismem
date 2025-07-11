@@ -19,6 +19,7 @@ import xunluo from '@/views/anbao/detail/xunluo.vue'
 import weather from '@/views/weather/weather.vue'
 import css from '@/views/CSS/CSS.vue'
 import apiClient from '@/plugins/axios'
+import advice_desk from '@/views/advice_desk/advice_desk.vue'
 
 
 import { useAuthStore } from '@/store/authStore'
@@ -39,6 +40,14 @@ const router = createRouter({
       component: meetingRecord,
       meta: {
         title: '班前会记录' // 自定义标题
+      }
+    },
+    {
+      path: '/advice_desk',
+      name: 'advice_desk',
+      component: advice_desk,
+      meta: {
+        title: '建议大厅' // 自定义标题
       }
     },
     {

@@ -1,12 +1,4 @@
 <template>
-  <div v-if="!isWechat" class="wechat-mask">
-    <div class="wechat-alert">
-      <van-icon name="warning" size="40px" color="#FF976A" />
-      <h3>请在微信中打开</h3>
-      <p>此页面仅支持在微信中访问</p>
-
-    </div>
-  </div>
   <div class="suggestion-page">
      <van-collapse v-model="activeNames">
       <van-collapse-item name="1">
@@ -47,30 +39,12 @@
               <template #right-icon>
                 <van-radio :name="item.value" />
               </template>
+              <template #label v-if="item.value === 'canteen'">
+                <div class="canteen-label">{{ item.subText }}</div>
+              </template>
             </van-cell>
           </van-cell-group>
         </van-radio-group>
-        
-        <!-- 食堂选择折叠面板（仅当选择了食堂餐饮时显示） -->
-        <van-collapse v-model="canteenActiveNames" v-if="selectedCategory === 'canteen'">
-          <van-collapse-item name="canteen" title="- 请选择具体食堂" :border="false">
-            <van-radio-group v-model="selectedCanteen">
-              <van-cell-group>
-                <van-cell
-                  v-for="canteen in canteenOptions"
-                  :key="canteen.value"
-                  :title="canteen.text"
-                  clickable
-                  @click="selectedCanteen = canteen.value"
-                >
-                  <template #right-icon>
-                    <van-radio :name="canteen.value" />
-                  </template>
-                </van-cell>
-              </van-cell-group>
-            </van-radio-group>
-          </van-collapse-item>
-        </van-collapse>
         
         <div v-if="selectedCategory">
           <van-field
@@ -167,26 +141,17 @@ import logo from '@/assets/logo.svg';
 import Compressor from 'compressorjs'; // 图片压缩库
 import { v4 as uuidv4 } from 'uuid'; // 用于生成唯一文件名
 import type { UploaderFileListItem } from 'vant';
-
-// 添加微信环境检测变量
-const isWechat = ref(true);
-
-// 检测是否在微信中打开
-const checkWechatBrowser = () => {
-  const ua = navigator.userAgent.toLowerCase();
-  isWechat.value = ua.includes('micromessenger');
-};
 // 定义问题类别的数据结构
 interface Category {
   text: string;
   value: string;
+  subText?: string;
 }
 interface ExtendedUploaderFileListItem extends UploaderFileListItem {
   serverFile?: string;
 }
 // 表单响应式数据
 const selectedCategory = ref<string>('');
-const selectedCanteen = ref<string>(''); // 新增：存储选中的食堂
 const suggestionText = ref('');
 const employeeId = ref('');
 const employeeName = ref('');
@@ -198,7 +163,6 @@ const userAgent = ref(''); // 用户UA信息
 
 // 弹幕相关
 const activeNames = ref(['1']); // 默认展开第一个折叠面板
-const canteenActiveNames = ref(['canteen']); // 新增：食堂选择面板默认展开
 const barrageList = ref<{ id: number; text: string }[]>([]);
 const allBarrages = ref<{ id: string; text: string }[]>([]); // 存储所有弹幕
 let timer: number | null = null; // 定时器引用
@@ -206,16 +170,6 @@ let timer: number | null = null; // 定时器引用
 // 图片上传相关
 const uploadedImages = ref<ExtendedUploaderFileListItem[]>([]); 
 const tempImages = ref<string[]>([]); // 存储临时上传的图片文件名
-
-// 食堂选项
-const canteenOptions = ref([
-  { text: ' -- 大楼食堂大餐厅', value: 'main_building_large' },
-  { text: ' -- 大楼食堂小餐厅', value: 'main_building_small' },
-  { text: ' -- 南食堂', value: 'south' },
-  { text: ' -- 生活区食堂', value: 'living_area' },
-  { text: ' -- 中舟食堂员工餐厅', value: 'zhongzhou_employee' },
-  { text: ' -- 中舟食堂船东餐厅', value: 'zhongzhou_owner' }
-]);
 
 // 图片上传前的处理（压缩和验证）
 const beforeRead = (file: File | File[]): Promise<File | File[]> => {
@@ -439,13 +393,17 @@ const addBarrage = () => {
   });
 };
 
-// 问题类别选项（移除了食堂餐饮的subText）
+// 问题类别选项
 const categories = ref<Category[]>([
   { text: '工作环境', value: 'work_environment' },
   { text: '部门沟通', value: 'communication' },
   { text: '薪资福利', value: 'salary_benefits' },
   { text: '企业文化', value: 'culture' },
-  { text: '食堂餐饮', value: 'canteen' },
+  { 
+    text: '食堂餐饮', 
+    value: 'canteen', 
+    subText: '大楼食堂大餐厅、大楼食堂小餐厅、南食堂、生活区食堂、中舟食堂员工餐厅、中舟食堂船东餐厅'
+  },
   { text: '宿舍服务', value: 'dormitory' },
   { text: '其他', value: 'other' },
 ]);
@@ -456,12 +414,6 @@ const onSubmit = async () => {
   // 验证是否选择了类别
   if (!selectedCategory.value) {
     showFailToast('请选择问题类别');
-    return;
-  }
-  
-  // 如果选择了食堂餐饮，验证是否选择了具体食堂
-  if (selectedCategory.value === 'canteen' && !selectedCanteen.value) {
-    showFailToast('请选择具体食堂');
     return;
   }
   
@@ -493,8 +445,6 @@ const onSubmit = async () => {
     }
     const submitData = {
       category: selectedCategory.value,
-      // 如果是食堂餐饮，添加具体食堂信息
-      ...(selectedCategory.value === 'canteen' && { canteen: selectedCanteen.value }),
       suggestion: suggestionText.value.trim(),
       expectReply: expectReply.value,
       userAgent: navigator.userAgent, // 添加用户UA信息
@@ -514,7 +464,6 @@ const onSubmit = async () => {
       
       // 重置表单
       selectedCategory.value = '';
-      selectedCanteen.value = ''; // 重置食堂选择
       suggestionText.value = '';
       employeeId.value = '';
       employeeName.value = '';
@@ -543,12 +492,6 @@ const onSubmit = async () => {
 
 // 页面加载时获取弹幕数据
 onMounted(() => {
-  checkWechatBrowser();
-  
-  // 如果不在微信中，阻止页面滚动
-  if (!isWechat.value) {
-    document.body.style.overflow = 'hidden';
-  }
   fetchBarrageList();
 });
 </script>
@@ -603,6 +546,14 @@ onMounted(() => {
   font-size: 16px; /* 统一输入框左侧标题字体大小 */
 }
 
+/* 食堂餐饮的辅助说明文字 */
+.canteen-label {
+  font-size: 12px;
+  color: #969799;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
 /* 详细说明文本域的特殊样式 */
 .suggestion-textarea {
   margin-top: 8px; /* 与上方选项留出一些间距 */
@@ -640,57 +591,5 @@ onMounted(() => {
 
 :deep(.van-uploader__preview-delete) {
   background-color: rgba(0, 0, 0, 0.7);
-}
-
-/* 食堂选择折叠面板样式 */
-:deep(.van-collapse-item__wrapper) {
-  background-color: #f9f9f9;
-  border-radius: 8px;
-  margin-top: 8px;
-}
-
-:deep(.van-collapse-item__content) {
-  padding: 0;
-}
-
-/* 添加微信遮罩层样式 */
-.wechat-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.9);
-  z-index: 9999;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-}
-
-.wechat-alert {
-  background-color: white;
-  border-radius: 16px;
-  padding: 30px;
-  width: 80%;
-  max-width: 300px;
-  color: #333;
-}
-
-.wechat-alert h3 {
-  font-size: 20px;
-  margin: 15px 0;
-}
-
-.wechat-alert p {
-  font-size: 14px;
-  line-height: 1.6;
-  margin: 8px 0;
-}
-
-/* 非微信环境下模糊页面内容 */
-.blur-content {
-  filter: blur(5px);
-  pointer-events: none;
 }
 </style>

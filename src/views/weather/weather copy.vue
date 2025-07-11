@@ -1,315 +1,643 @@
 <template>
-  <div class="weather-dashboard">
-    <!-- 头部区域 -->
-    <div class="dashboard-header">
-      <div class="header-left">
-        <h1>气象信息大屏</h1>
-        <p v-if="weatherData">
-          {{ weatherData.forecasts[0].province }} {{ weatherData.forecasts[0].city }} | 数据更新于 {{ weatherData.forecasts[0].reporttime }}
-        </p>
-      </div>
-      <div class="header-right">
-        <div class="current-time">{{ currentTime }}</div>
-        <div class="current-date">{{ currentDate }}</div>
-      </div>
+  <div class="weather-dashboard-container">
+    <!-- 天气背景动画 -->
+    <div class="weather-bg">
+      <div class="sun"></div>
+      <div class="cloud"></div>
+      <div class="cloud"></div>
+      <div class="cloud"></div>
     </div>
-    
-    <!-- 主内容区域 -->
-    <div class="dashboard-content">
-      <!-- 左侧气象信息 -->
-      <div class="weather-section">
-        <div class="dashboard-grid">
-          <!-- 当前天气 -->
-          <t-card class="dashboard-card current-weather-card" hover-shadow>
-            <div class="current-weather" v-if="weatherData">
-              <div class="weather-icon">
-                <t-icon :name="getWeatherIcon(todayWeather.dayweather)" />
-              </div>
-              <div class="weather-info">
-                <div class="temperature">{{ todayWeather.daytemp }}°C</div>
-                <div class="weather-desc">{{ todayWeather.dayweather }}</div>
-              </div>
-            </div>
-          </t-card>
 
-          <!-- 今日详情 -->
-          <t-card class="dashboard-card" hover-shadow>
-             <template #header><div class="card-title">今日详情</div></template>
-            <div class="today-details">
-              <div class="detail-item">
-                <span>最高温</span>
-                <strong>{{ todayWeather.daytemp }}°C</strong>
-              </div>
-              <div class="detail-item">
-                <span>最低温</span>
-                <strong>{{ todayWeather.nighttemp }}°C</strong>
-              </div>
-               <div class="detail-item">
-                <span>风向</span>
-                <strong>{{ todayWeather.daywind }}风</strong>
-              </div>
-              <div class="detail-item">
-                <span>风力</span>
-                <strong>{{ todayWeather.daypower }} 级</strong>
-              </div>
-            </div>
-          </t-card>
-          
-          <!-- 温度趋势 -->
-          <t-card class="dashboard-card" hover-shadow>
-            <template #header><div class="card-title">温度趋势</div></template>
-            <div class="chart-container" ref="tempChart"></div>
-          </t-card>
-          
-          <!-- 四日预报 -->
-          <t-card class="dashboard-card" hover-shadow>
-            <template #header><div class="card-title">四日预报</div></template>
-            <div class="forecast-container">
-              <div 
-                class="forecast-item" 
-                v-for="(cast, index) in weatherData.forecasts[0].casts" 
-                :key="index"
-              >
-                <div class="forecast-date">{{ formatDate(cast.date) }} ({{ formatWeek(cast.week) }})</div>
-                <div class="forecast-icon">
-                  <t-icon :name="getWeatherIcon(cast.dayweather)" size="2em"></t-icon>
+    <!-- 天气仪表盘 -->
+    <div class="weather-dashboard">
+      <!-- 头部区域 -->
+      <div class="dashboard-header">
+        <div class="header-left">
+          <h1>气象信息大屏</h1>
+          <p>{{ locationText }} | 数据更新于 {{ formatDateTime(weatherData.now.uptime) }}</p>
+        </div>
+        <div class="header-right">
+          <div class="current-time">{{ currentTime }}</div>
+          <div class="current-date">{{ currentDate }}</div>
+        </div>
+      </div>
+      
+      <!-- 主内容区域 -->
+      <div class="dashboard-content">
+        <!-- 左侧气象信息 -->
+        <div class="weather-section">
+          <div class="dashboard-grid">
+            <!-- 当前天气信息 -->
+            <div class="dashboard-card current-weather-card">
+              <div class="current-weather">
+                <div class="weather-icon">
+                  <i :class="getWeatherIcon(weatherData.now.text)"></i>
                 </div>
-                <div class="forecast-weather">{{ cast.dayweather }}</div>
-                <div class="forecast-temp">{{ cast.nighttemp }}° / {{ cast.daytemp }}°</div>
+                <div class="weather-info">
+                  <div class="temperature">{{ weatherData.now.temp }}°</div>
+                  <div class="weather-desc">{{ weatherData.now.text }}</div>
+                  <div class="weather-feels">体感温度 {{ weatherData.now.feels_like }}°</div>
+                </div>
               </div>
-            </div>
-          </t-card>
-          
-          <!-- 气象指数 -->
-          <t-card class="dashboard-card" hover-shadow>
-            <template #header><div class="card-title">气象指数</div></template>
-            <div class="indices-container">
-              <div 
-                class="index-item" 
-                v-for="(item, idx) in weatherIndices" 
-                :key="idx"
-              >
-                <t-icon :name="item.icon" size="1.8em" :style="{ color: item.color }"></t-icon>
-                <div class="index-info">
-                  <div class="index-name">{{ item.name }}</div>
-                  <div class="index-value" :style="{ color: item.color }">{{ item.value }}</div>
+              <div class="weather-details">
+                <div class="detail-item">
+                  <span>湿度</span>
+                  <strong>{{ weatherData.now.rh }}%</strong>
+                </div>
+                <div class="detail-item">
+                  <span>风力</span>
+                  <strong>{{ weatherData.now.wind_dir }} {{ weatherData.now.wind_class }}</strong>
+                </div>
+                <div class="detail-item">
+                  <span>能见度</span>
+                  <strong>{{ (weatherData.now.vis / 1000).toFixed(1) }}km</strong>
+                </div>
+                <div class="detail-item">
+                  <span>空气质量</span>
+                  <strong>{{ getAirQuality(weatherData.now.aqi) }}</strong>
                 </div>
               </div>
             </div>
-          </t-card>
 
-           <!-- 风力信息 -->
-          <t-card class="dashboard-card" hover-shadow>
-            <template #header><div class="card-title">风力信息</div></template>
-            <div class="wind-container">
-              <div 
-                class="wind-item" 
-                v-for="(cast, index) in weatherData.forecasts[0].casts" 
-                :key="index"
-              >
-                <div class="wind-info">
-                  <div class="wind-date">{{ formatDate(cast.date) }}</div>
-                  <div class="wind-details">
-                    <t-icon name="wind" size="1.5em"></t-icon>
-                    <span>{{ cast.daywind }}风 {{ cast.daypower }}级</span>
+            <!-- 未来七天预报 -->
+            <div class="dashboard-card weekly-forecast-card">
+              <div class="card-title">未来五天预报</div>
+              <div class="weekly-forecast-container">
+                <div 
+                  v-for="(day, index) in weeklyForecast" 
+                  :key="index" 
+                  class="weekly-item"
+                >
+                  <div class="weekly-date">
+                    <div class="weekly-week">{{ day.week }}</div>
+                    <div class="weekly-day">{{ formatDate(day.date) }}</div>
+                  </div>
+                  <div class="weekly-weather">
+                    <i :class="getWeatherIcon(day.text_day)"></i>
+                    <span>{{ day.text_day }} / {{ day.text_night }}</span>
+                  </div>
+                  <div class="weekly-temp">
+                    <span class="high-temp">{{ day.high }}°</span>
+                    <span class="low-temp">{{ day.low }}°</span>
+                  </div>
+                  <div class="weekly-wind">
+                    <i class="td-icon t-icon-wind"></i>
+                    <span>{{ day.wd_day }} {{ day.wc_day }}</span>
                   </div>
                 </div>
               </div>
             </div>
-          </t-card>
-
+            
+            <!-- 24小时预报 -->
+            <div class="dashboard-card hourly-forecast-card">
+              <div class="card-title">24小时预报</div>
+              <div class="hourly-forecast-container">
+                <div class="hourly-temp-container">
+                  <div 
+                    v-for="(hour, index) in hourlyForecast" 
+                    :key="'temp-'+index" 
+                    class="hourly-temp"
+                    :style="{ height: calculateTempHeight(hour.temp_fc) + 'px' }"
+                  >
+                    <span>{{ hour.temp_fc }}°</span>
+                  </div>
+                </div>
+                <div class="hourly-time-container">
+                  <div 
+                    v-for="(hour, index) in hourlyForecast" 
+                    :key="'time-'+index" 
+                    class="hourly-time"
+                  >
+                    {{ formatHour24(hour.data_time) }}
+                  </div>
+                </div>
+                <div class="hourly-weather-container">
+                  <div 
+                    v-for="(hour, index) in hourlyForecast" 
+                    :key="'weather-'+index" 
+                    class="hourly-weather"
+                  >
+                    <i :class="getWeatherIcon(hour.text)"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 右侧地图区域 -->
+        <div class="map-section">
+          <div class="map-header">
+            <i class="td-icon t-icon-earth map-icon"></i>
+            <span>全球风场实时动态</span>
+          </div>
+          <iframe 
+            class="map-iframe" 
+            src="https://earth.nullschool.net/zh-cn/#current/wind/surface/level/orthographic=-241.89,33.26,2990/loc=120.163,31.958" 
+            allowfullscreen
+          ></iframe>
         </div>
       </div>
-      
-      <!-- 右侧地图区域 -->
-      <t-card class="map-section" :bordered="false">
-        <div class="map-header">
-          <t-icon name="earth" />
-          <span>全球风场实时动态</span>
-        </div>
-        <iframe 
-          class="map-iframe" 
-          src="https://earth.nullschool.net/zh-cn/#current/wind/surface/level/orthographic=-241.89,33.26,2990/loc=120.163,31.958" 
-          allowfullscreen
-        ></iframe>
-      </t-card>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import * as echarts from 'echarts';
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 
-// --- 类型定义 ---
-interface WeatherCast {
-  date: string; week: string; dayweather: string; nightweather: string;
-  daytemp: string; nighttemp: string; daywind: string; nightwind: string;
-  daypower: string; nightpower: string; daytemp_float: string; nighttemp_float: string;
-}
-interface WeatherForecast {
-  city: string; adcode: string; province: string; reporttime: string; casts: WeatherCast[];
-}
+// 定义天气数据类型
 interface WeatherData {
-  status: string; count: string; info: string; infocode: string; forecasts: WeatherForecast[];
-}
-interface WeatherIndex {
-  name: string; icon: string; value: string; color: string;
+  location: {
+    country: string;
+    province: string;
+    city: string;
+    name: string;
+    id: string;
+  };
+  now: {
+    text: string;
+    temp: number;
+    feels_like: number;
+    rh: number;
+    wind_class: string;
+    wind_dir: string;
+    prec_1h: number;
+    clouds: number;
+    vis: number;
+    aqi: number;
+    pm25: number;
+    pm10: number;
+    no2: number;
+    so2: number;
+    o3: number;
+    co: number;
+    uptime: string;
+  };
+  forecasts: {
+    text_day: string;
+    text_night: string;
+    high: number;
+    low: number;
+    wc_day: string;
+    wd_day: string;
+    wc_night: string;
+    wd_night: string;
+    date: string;
+    week: string;
+  }[];
+  forecast_hours: {
+    text: string;
+    temp_fc: number;
+    wind_class: string;
+    wind_dir: string;
+    rh: number;
+    prec_1h: number;
+    clouds: number;
+    data_time: string;
+  }[];
 }
 
-// --- 状态管理 ---
-const currentTime = ref<string>('');
-const currentDate = ref<string>('');
-const tempChart = ref<HTMLElement | null>(null);
-let chartInstance: echarts.ECharts | null = null;
-let timeInterval: number | null = null;
+// 模拟后端数据
+const weatherData: WeatherData = {
+  "location": {
+    "country": "中国",
+    "province": "江苏省",
+    "city": "泰州市",
+    "name": "靖江",
+    "id": "321282"
+  },
+  "now": {
+    "text": "多云",
+    "temp": 30,
+    "feels_like": 31,
+    "rh": 76,
+    "wind_class": "2级",
+    "wind_dir": "东风",
+    "prec_1h": 0.0,
+    "clouds": 52,
+    "vis": 8500,
+    "aqi": 74,
+    "pm25": 54,
+    "pm10": 79,
+    "no2": 36,
+    "so2": 9,
+    "o3": 64,
+    "co": 0.8,
+    "uptime": "20250710094000"
+  },
+  "forecasts": [
+    {
+      "text_day": "晴",
+      "text_night": "多云",
+      "high": 32,
+      "low": 27,
+      "wc_day": "<3级",
+      "wd_day": "东风",
+      "wc_night": "<3级",
+      "wd_night": "东北风",
+      "date": "2025-07-10",
+      "week": "星期四"
+    },
+    {
+      "text_day": "大雨",
+      "text_night": "小雨",
+      "high": 29,
+      "low": 26,
+      "wc_day": "<3级",
+      "wd_day": "东北风",
+      "wc_night": "<3级",
+      "wd_night": "东风",
+      "date": "2025-07-11",
+      "week": "星期五"
+    },
+    {
+      "text_day": "中雨",
+      "text_night": "晴",
+      "high": 30,
+      "low": 26,
+      "wc_day": "<3级",
+      "wd_day": "东风",
+      "wc_night": "<3级",
+      "wd_night": "东北风",
+      "date": "2025-07-12",
+      "week": "星期六"
+    },
+    {
+      "text_day": "晴",
+      "text_night": "晴",
+      "high": 32,
+      "low": 26,
+      "wc_day": "<3级",
+      "wd_day": "东风",
+      "wc_night": "<3级",
+      "wd_night": "东风",
+      "date": "2025-07-13",
+      "week": "星期日"
+    },
+    {
+      "text_day": "多云",
+      "text_night": "阴",
+      "high": 33,
+      "low": 27,
+      "wc_day": "<3级",
+      "wd_day": "西风",
+      "wc_night": "<3级",
+      "wd_night": "西南风",
+      "date": "2025-07-14",
+      "week": "星期一"
+    },
+    {
+      "text_day": "阴",
+      "text_night": "阴",
+      "high": 34,
+      "low": 29,
+      "wc_day": "<3级",
+      "wd_day": "西南风",
+      "wc_night": "<3级",
+      "wd_night": "南风",
+      "date": "2025-07-15",
+      "week": "星期二"
+    },
+    {
+      "text_day": "多云",
+      "text_night": "阴",
+      "high": 36,
+      "low": 29,
+      "wc_day": "<3级",
+      "wd_day": "东南风",
+      "wc_night": "<3级",
+      "wd_night": "东南风",
+      "date": "2025-07-16",
+      "week": "星期三"
+    }
+  ],
+  "forecast_hours": [
+    {
+      "text": "晴",
+      "temp_fc": 29,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 76,
+      "prec_1h": 0.0,
+      "clouds": 1,
+      "data_time": "2025-07-10 09:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 30,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 73,
+      "prec_1h": 0.0,
+      "clouds": 4,
+      "data_time": "2025-07-10 10:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 31,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 70,
+      "prec_1h": 0.0,
+      "clouds": 6,
+      "data_time": "2025-07-10 11:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 31,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 70,
+      "prec_1h": 0.0,
+      "clouds": 7,
+      "data_time": "2025-07-10 12:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 31,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 71,
+      "prec_1h": 0.0,
+      "clouds": 8,
+      "data_time": "2025-07-10 13:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 32,
+      "wind_class": "3~4级",
+      "wind_dir": "东风",
+      "rh": 72,
+      "prec_1h": 0.0,
+      "clouds": 9,
+      "data_time": "2025-07-10 14:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 31,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 72,
+      "prec_1h": 0.0,
+      "clouds": 7,
+      "data_time": "2025-07-10 15:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 31,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 72,
+      "prec_1h": 0.0,
+      "clouds": 6,
+      "data_time": "2025-07-10 16:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 31,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 73,
+      "prec_1h": 0.0,
+      "clouds": 5,
+      "data_time": "2025-07-10 17:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 30,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 75,
+      "prec_1h": 0.0,
+      "clouds": 3,
+      "data_time": "2025-07-10 18:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 29,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 77,
+      "prec_1h": 0.0,
+      "clouds": 1,
+      "data_time": "2025-07-10 19:00:00"
+    },
+    {
+      "text": "晴",
+      "temp_fc": 29,
+      "wind_class": "<3级",
+      "wind_dir": "东风",
+      "rh": 79,
+      "prec_1h": 0.0,
+      "clouds": 0,
+      "data_time": "2025-07-10 20:00:00"
+    }
+  ]
+};
 
-// --- 模拟数据 ---
-const weatherData = ref<WeatherData>({
-  status: "1", count: "1", info: "OK", infocode: "10000",
-  forecasts: [{
-    city: "靖江市", adcode: "321282", province: "江苏", reporttime: "2025-07-09 16:04:21",
-    casts: [
-      { date: "2025-07-09", week: "3", dayweather: "晴", nightweather: "晴", daytemp: "33", nighttemp: "27", daywind: "东", nightwind: "东", daypower: "1-3", nightpower: "1-3", daytemp_float: "33.0", nighttemp_float: "27.0" },
-      { date: "2025-07-10", week: "4", dayweather: "多云", nightweather: "小雨", daytemp: "34", nighttemp: "27", daywind: "东", nightwind: "东", daypower: "1-3", nightpower: "1-3", daytemp_float: "34.0", nighttemp_float: "27.0" },
-      { date: "2025-07-11", week: "5", dayweather: "暴雨", nightweather: "小雨", daytemp: "29", nighttemp: "26", daywind: "东北", nightwind: "东北", daypower: "1-3", nightpower: "1-3", daytemp_float: "29.0", nighttemp_float: "26.0" },
-      { date: "2025-07-12", week: "6", dayweather: "小雨", nightweather: "阴", daytemp: "31", nighttemp: "26", daywind: "东", nightwind: "东", daypower: "1-3", nightpower: "1-3", daytemp_float: "31.0", nighttemp_float: "26.0" }
-    ]
-  }]
+// 响应式数据
+const currentTime = ref('15:48:22');
+const currentDate = ref('2025年7月10日 星期四');
+
+// 计算属性
+const locationText = computed(() => {
+  return `${weatherData.location.province} ${weatherData.location.name}`;
 });
 
-const weatherIndices = ref<WeatherIndex[]>([
-  { name: '紫外线', icon: 'sun', value: '中等', color: '#f57c00' },
-  { name: '健康', icon: 'heart', value: '良好', color: '#d32f2f' },
-  { name: '穿衣', icon: 'clothes', value: '舒适', color: '#388e3c' },
-  { name: '出行', icon: 'car', value: '适宜', color: '#1976d2' },
-  { name: '运动', icon: 'run', value: '适宜', color: '#0097a7' },
-  { name: '洗车', icon: 'water', value: '不宜', color: '#512da8' }
-]);
+const hourlyForecast = computed(() => {
+  return weatherData.forecast_hours.slice(0, 12); // 只取前12小时数据
+});
 
-// --- 计算属性 ---
-const todayWeather = computed(() => weatherData.value.forecasts[0].casts[0]);
+const weeklyForecast = computed(() => {
+  return weatherData.forecasts.slice(0, 5);
+});
 
-// --- 方法 ---
+// 方法
+const formatDateTime = (datetime: string) => {
+  // 20250710094000 -> 2025-07-10 09:40:00
+  const year = datetime.substring(0, 4);
+  const month = datetime.substring(4, 6);
+  const day = datetime.substring(6, 8);
+  const hour = datetime.substring(8, 10);
+  const minute = datetime.substring(10, 12);
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+};
+
+const formatHour24 = (datetime: string) => {
+  // 2025-07-10 09:00:00 -> 09:00
+  return datetime.substring(11, 16);
+};
+
+const formatDate = (dateStr: string) => {
+  // 2025-07-10 -> 07月10日
+  return dateStr.substring(5, 7) + '月' + dateStr.substring(8, 10) + '日';
+};
+
+const calculateTempHeight = (temp: number) => {
+  // 温度范围假设为25-40度，计算柱状图高度
+  const minTemp = 25;
+  const maxTemp = 40;
+  const maxHeight = 80;
+  return ((temp - minTemp) / (maxTemp - minTemp)) * maxHeight;
+};
+
+const getWeatherIcon = (weather: string) => {
+  const iconMap: Record<string, string> = {
+    '晴': 'td-icon t-icon-sunny',
+    '多云': 'td-icon t-icon-cloudy',
+    '阴': 'td-icon t-icon-cloud',
+    '小雨': 'td-icon t-icon-rain',
+    '中雨': 'td-icon t-icon-rainy',
+    '大雨': 'td-icon t-icon-heavy-rain',
+    '暴雨': 'td-icon t-icon-storm',
+    '雾': 'td-icon t-icon-fog',
+    '雪': 'td-icon t-icon-snow',
+  };
+  return iconMap[weather] || 'td-icon t-icon-sunny';
+};
+
+const getAirQuality = (aqi: number) => {
+  if (aqi <= 50) return '优';
+  if (aqi <= 100) return '良';
+  if (aqi <= 150) return '轻度污染';
+  if (aqi <= 200) return '中度污染';
+  if (aqi <= 300) return '重度污染';
+  return '严重污染';
+};
+
+// 更新时间显示
+let timer: number | null = null;
 const updateDateTime = () => {
   const now = new Date();
-  currentTime.value = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  currentDate.value = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
-};
-
-const formatDate = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
-};
-
-const formatWeek = (week: string): string => {
-  const weekMap: Record<string, string> = { '1': '一', '2': '二', '3': '三', '4': '四', '5': '五', '6': '六', '7': '日' };
-  return `周${weekMap[week] || ''}`;
-};
-
-const getWeatherIcon = (weather: string): string => {
-  const iconMap: Record<string, string> = {
-    '晴': 'sunny', '多云': 'cloudy', '阴': 'cloudy',
-    '小雨': 'rain', '中雨': 'rain', '大雨': 'rain',
-    '阵雨': 'rain', '雷阵雨': 'thunderstorm', '暴雨': 'rainy',
-    '大暴雨': 'rainy', '特大暴雨': 'rainy',
-    '雪': 'snow', '雾': 'fog',
-  };
-  return iconMap[weather] || 'cloudy'; // 默认图标
-};
-
-const initTempChart = () => {
-  if (!tempChart.value) return;
-  chartInstance = echarts.init(tempChart.value);
+  currentTime.value = now.toLocaleTimeString('zh-CN', { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit',
+    hour12: false 
+  });
   
-  const casts = weatherData.value.forecasts[0].casts;
-  const dates = casts.map(c => formatDate(c.date));
-  const dayTemps = casts.map(c => parseInt(c.daytemp));
-  const nightTemps = casts.map(c => parseInt(c.nighttemp));
-  
-  const option: echarts.EChartsOption = {
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['白天温度', '夜间温度'], top: '5%', right: '5%' },
-    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', boundaryGap: false, data: dates },
-    yAxis: { type: 'value', axisLabel: { formatter: '{value} °C' } },
-    series: [
-      {
-        name: '白天温度', type: 'line', smooth: true,
-        itemStyle: { color: '#FF6B6B' },
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(255, 107, 107, 0.5)' }, { offset: 1, color: 'rgba(255, 107, 107, 0)' }])},
-        data: dayTemps
-      },
-      {
-        name: '夜间温度', type: 'line', smooth: true,
-        itemStyle: { color: '#4D96FF' },
-        areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(77, 150, 255, 0.5)' }, { offset: 1, color: 'rgba(77, 150, 255, 0)' }])},
-        data: nightTemps
-      }
-    ]
-  };
-  chartInstance.setOption(option);
+  currentDate.value = now.toLocaleDateString('zh-CN', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric', 
+    weekday: 'long' 
+  });
 };
 
-const resizeChart = () => {
-  chartInstance?.resize();
-};
-
-// --- 生命周期 ---
+// 生命周期钩子
 onMounted(() => {
   updateDateTime();
-  timeInterval = setInterval(updateDateTime, 1000);
-  
-  initTempChart();
-  window.addEventListener('resize', resizeChart);
+  timer = setInterval(updateDateTime, 1000);
 });
 
 onBeforeUnmount(() => {
-  if (timeInterval) clearInterval(timeInterval);
-  window.removeEventListener('resize', resizeChart);
-  chartInstance?.dispose();
+  if (timer) clearInterval(timer);
 });
 </script>
 
 <style scoped>
-:root {
-  --bg-color: #f4f6f9;
-  --card-bg-color: #ffffff;
-  --text-primary-color: #1f2937;
-  --text-secondary-color: #6b7280;
-  --border-color: #e5e7eb;
-  --shadow-color: rgba(0, 0, 0, 0.05);
+.weather-dashboard-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+  color: var(--text-primary);
+  overflow: hidden;
+  position: relative;
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}
+
+/* 天气背景动画 */
+.weather-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.sun {
+  position: absolute;
+  top: 10%;
+  right: 15%;
+  width: 120px;
+  height: 100px;
+  background: radial-gradient(circle, #ffde59 0%, rgba(255,222,89,0.8) 40%, rgba(255,222,89,0.4) 70%, transparent 90%);
+  border-radius: 50%;
+  box-shadow: 0 0 100px 40px rgba(255, 222, 89, 0.6);
+  animation: pulse 8s infinite ease-in-out;
+}
+
+.cloud {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  filter: blur(10px);
+  animation: float 30s linear infinite;
+}
+
+.cloud:nth-child(1) {
+  top: 15%;
+  left: 5%;
+  width: 150px;
+  height: 60px;
+  animation-duration: 40s;
+}
+
+.cloud:nth-child(2) {
+  top: 25%;
+  right: 10%;
+  width: 200px;
+  height: 80px;
+  animation-duration: 35s;
+  animation-delay: -15s;
+}
+
+.cloud:nth-child(3) {
+  top: 40%;
+  left: 15%;
+  width: 180px;
+  height: 70px;
+  animation-duration: 50s;
+  animation-delay: -10s;
 }
 
 .weather-dashboard {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: var(--bg-color);
-  color: var(--text-primary-color);
-  padding: 16px;
-  box-sizing: border-box;
+  padding: 24px;
+  position: relative;
+  z-index: 10;
+  backdrop-filter: blur(2px);
 }
 
 .dashboard-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 16px 24px;
   margin-bottom: 16px;
-  flex-shrink: 0;
+  border-bottom: 1px solid var(--glass-border);
 }
 
 .header-left h1 {
-  font-size: 2rem;
-  font-weight: 600;
-  margin: 0 0 4px 0;
+  font-size: 2.8rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #ffffff, #a0d7ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 15px rgba(74, 144, 226, 0.3);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
 }
 
 .header-left p {
-  font-size: 0.9rem;
-  color: var(--text-secondary-color);
-  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  font-weight: 300;
 }
 
 .header-right {
@@ -317,221 +645,487 @@ onBeforeUnmount(() => {
 }
 
 .current-time {
-  font-size: 1.5rem;
-  font-weight: 500;
+  font-size: 2.5rem;
+  font-weight: 300;
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(74, 144, 226, 0.7);
 }
 
 .current-date {
-  font-size: 0.9rem;
-  color: var(--text-secondary-color);
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  font-weight: 300;
 }
 
 .dashboard-content {
   display: flex;
   flex: 1;
-  gap: 16px;
+  gap: 24px;
   overflow: hidden;
 }
 
 .weather-section {
   flex: 7;
-  overflow-y: auto;
-}
-
-.map-section {
-  flex: 5;
   display: flex;
   flex-direction: column;
-  background-color: var(--card-bg-color);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px var(--shadow-color);
-}
-
-.map-header {
-  padding: 12px 16px;
-  font-size: 1rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.map-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
+  overflow-y: hidden;
 }
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 16px;
+  grid-template-columns: 1fr 1.5fr;
+  grid-template-rows: auto auto;
+  gap: 24px;
 }
 
 .dashboard-card {
-  background-color: var(--card-bg-color);
-  border-radius: 12px;
-  box-shadow: 0 4px 12px var(--shadow-color);
-  border: 1px solid var(--border-color);
-  padding: 16px;
-  box-sizing: border-box;
+  background: var(--glass-bg);
+  border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  position: relative;
 }
 
-:deep(.t-card__header) {
-  padding: 0 0 12px 0;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 12px;
+.dashboard-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at top right, rgba(74, 144, 226, 0.15), transparent 70%);
+  pointer-events: none;
 }
-:deep(.t-card__body) {
-  padding: 0;
-  flex: 1;
-  overflow: hidden;
+
+.dashboard-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .card-title {
-  font-size: 1.1rem;
+  font-size: 1.4rem;
   font-weight: 600;
-}
-
-/* Card Specific Styles */
-.current-weather-card .current-weather {
+  margin-bottom: 20px;
+  color: #ffffff;
   display: flex;
   align-items: center;
-  gap: 20px;
-}
-.current-weather-card .weather-icon {
-  font-size: 5rem;
-  color: #4a90e2;
-}
-.current-weather-card .weather-info {
-  line-height: 1.2;
-}
-.current-weather-card .temperature {
-  font-size: 3.5rem;
-  font-weight: 700;
-}
-.current-weather-card .weather-desc {
-  font-size: 1.5rem;
-  color: var(--text-secondary-color);
+  gap: 10px;
 }
 
-.today-details {
+.card-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--primary-color), transparent);
+  margin-left: 12px;
+}
+
+/* 当前天气信息样式 */
+.current-weather-card {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.current-weather {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0 20px;
+}
+
+.weather-icon {
+  font-size: 5rem;
+  color: #ffde59;
+  text-shadow: 0 0 20px rgba(255, 222, 89, 0.5);
+  animation: floatIcon 6s infinite ease-in-out;
+}
+
+.weather-info {
+  text-align: right;
+}
+
+.temperature {
+  font-size: 4.5rem;
+  font-weight: 300;
+  line-height: 1;
+  background: linear-gradient(90deg, #ffffff, #a0d7ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+
+.weather-desc {
+  font-size: 1.8rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.weather-feels {
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+.weather-details {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  height: 100%;
-  align-content: center;
+  margin-top: 20px;
 }
-.today-details .detail-item {
+
+.detail-item {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid var(--glass-border);
   display: flex;
   flex-direction: column;
-  background-color: #f9fafb;
-  padding: 12px;
-  border-radius: 8px;
+  align-items: center;
+  transition: all 0.3s ease;
 }
-.today-details .detail-item span {
-  font-size: 0.9rem;
-  color: var(--text-secondary-color);
+
+.detail-item:hover {
+  background: rgba(74, 144, 226, 0.15);
+  transform: translateY(-3px);
 }
-.today-details .detail-item strong {
+
+.detail-item span {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.detail-item strong {
   font-size: 1.2rem;
-  font-weight: 600;
+  font-weight: 500;
+  color: #ffffff;
 }
 
-.chart-container {
-  width: 100%;
-  height: 100%;
-  min-height: 180px;
+/* 未来七天预报样式 */
+.weekly-forecast-card {
+  grid-column: 2;
+  grid-row: 1;
 }
 
-.forecast-container {
+.weekly-forecast-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.weekly-forecast-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.weekly-forecast-container::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.weekly-item {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr 1fr;
+  align-items: center;
+  padding: 12px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  transition: all 0.3s ease;
+}
+
+.weekly-item:hover {
+  background: rgba(74, 144, 226, 0.15);
+  transform: translateY(-3px);
+}
+
+.weekly-date {
+  display: flex;
+  flex-direction: column;
+}
+
+.weekly-week {
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.weekly-day {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.weekly-weather {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.weekly-weather i {
+  font-size: 1.5rem;
+  color: #ffde59;
+}
+
+.weekly-weather span {
+  font-size: 0.9rem;
+}
+
+.weekly-temp {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.high-temp {
+  color: #ff6b6b;
+  font-weight: 500;
+}
+
+.low-temp {
+  color: #4d96ff;
+  font-weight: 500;
+}
+
+.weekly-wind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  justify-content: flex-end;
+}
+
+.weekly-wind i {
+  color: var(--primary-color);
+}
+
+/* 24小时预报样式 */
+.hourly-forecast-card {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+}
+
+.hourly-forecast-container {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.hourly-temp-container {
   display: flex;
   justify-content: space-between;
-  height: 100%;
-  gap: 12px;
+  align-items: flex-end;
+  height: 120px;
+  padding: 0 10px;
 }
-.forecast-item {
+
+.hourly-temp {
   flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-around;
-  padding: 12px 8px;
-  border-radius: 8px;
-  background-color: #f9fafb;
-  text-align: center;
+  justify-content: center;
+  align-items: flex-end;
+  background: linear-gradient(to top, #4a90e2, #36d1dc);
+  border-radius: 4px 4px 0 0;
+  margin: 0 2px;
+  min-width: 30px;
+  transition: all 0.3s ease;
+  position: relative;
+  transform: translateY(-5px);
+  box-shadow: 0 0 10px rgba(74, 144, 226, 0.5);
 }
-.forecast-date { font-size: 0.9rem; font-weight: 500; }
-.forecast-icon { margin: 8px 0; color: #4a90e2; }
-.forecast-weather { font-size: 1rem; margin-bottom: 4px; }
-.forecast-temp { font-size: 1rem; font-weight: 500; color: var(--text-secondary-color); }
 
-.indices-container {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  height: 100%;
+.hourly-temp span {
+  position: absolute;
+  top: -25px;
+  font-size: 0.9rem;
+  color: #ffffff;
 }
-.index-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background-color: #f9fafb;
-  padding: 12px;
-  border-radius: 8px;
-}
-.index-info {
-  line-height: 1.3;
-}
-.index-name { font-size: 0.9rem; }
-.index-value { font-size: 1.1rem; font-weight: 600; }
 
-.wind-container {
+.hourly-time-container {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  overflow-y: auto;
-}
-.wind-item {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 12px;
-  background-color: #f9fafb;
-  border-radius: 8px;
+  padding: 0 10px;
 }
-.wind-info .wind-date { font-weight: 500; }
-.wind-info .wind-details { display: flex; align-items: center; gap: 8px; color: var(--text-secondary-color); }
 
-/* Responsive */
+.hourly-time {
+  flex: 1;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  min-width: 30px;
+}
+
+.hourly-weather-container {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+
+.hourly-weather {
+  flex: 1;
+  text-align: center;
+  font-size: 1.2rem;
+  color: #ffde59;
+  min-width: 30px;
+}
+
+/* 地图区域 */
+.map-section {
+  flex: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.map-header {
+  padding: 20px;
+  font-size: 1.4rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.map-icon {
+  font-size: 1.8rem;
+  color: var(--primary-color);
+}
+
+.map-iframe {
+  flex: 1;
+  width: 100%;
+  border: none;
+}
+
+/* 动画定义 */
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@keyframes float {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100vw); }
+}
+
+@keyframes floatIcon {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0); }
+}
+
+/* 响应式设计 */
 @media (max-width: 1400px) {
-  .weather-section {
-    flex: 6;
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
   }
+  
+  .weekly-forecast-card {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  
+  .hourly-forecast-card {
+    grid-column: 1;
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 992px) {
+  .dashboard-content {
+    flex-direction: column;
+  }
+  
   .map-section {
-    flex: 4;
-  }
-  .indices-container {
-    grid-template-columns: repeat(2, 1fr);
+    min-height: 400px;
   }
 }
 
 @media (max-width: 768px) {
-  .dashboard-content {
-    flex-direction: column;
+  .header-left h1 {
+    font-size: 2rem;
   }
-  .weather-section {
-    overflow-y: visible;
+  
+  .current-time {
+    font-size: 2rem;
   }
-  .map-section {
-    min-height: 300px;
+  
+  .weekly-item {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 8px;
   }
-  .header-left h1 { font-size: 1.5rem; }
-  .current-time { font-size: 1.2rem; }
+  
+  .weekly-date {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  
+  .weekly-weather {
+    grid-column: 2;
+    grid-row: 1;
+    justify-content: flex-end;
+  }
+  
+  .weekly-temp {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  
+  .weekly-wind {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-end;
+  }
+  
+  .weather-icon {
+    font-size: 3.5rem;
+  }
+  
+  .temperature {
+    font-size: 3.5rem;
+  }
+  
+  .weather-desc {
+    font-size: 1.4rem;
+  }
+}
+</style>
+
+<style>
+:root {
+  --primary-color: #4a90e2;
+  --secondary-color: #36d1dc;
+  --accent-color: #5b86e5;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.8);
+  --card-bg: rgba(255, 255, 255, 0.12);
+  --card-border: rgba(255, 255, 255, 0.2);
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 </style>
