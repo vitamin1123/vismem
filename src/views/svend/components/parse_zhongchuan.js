@@ -81,37 +81,37 @@ function parseMergedHeaders(sheet) {
   };
 }
 
-export async function zhongchuan(file) {
-  try {
-    // 1. 读取Excel文件
-    const workbook = await readExcelFile(file);
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    
-    if (!sheet) {
-      throw new Error(`找不到工作表: ${sheetName}`);
-    }
+function parseSingleHeader(sheet) {
+  if (!sheet['!ref']) throw new Error('无效的工作表，缺少范围定义');
 
-    // 2. 解析表头
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  const headerRow = [];
+
+  // 读取单层表头（索引2对应Excel第3行）
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })];
+    headerRow.push(cell ? String(cell.v || '').trim() : '');
+  }
+
+  // 构建列定义
+  const columns = headerRow.map((header, index) => ({
+    index,
+    header,
+    fullPath: header
+  }));
+
+  return { 
+    columns,
+    dataStartRow: 1 // 数据从索引3开始（Excel第4行）
+  };
+}
+
+// 处理营口和敬业 sheet
+function processMergedSheet(sheet, targetColumns, sheetName) {
+  try {
     const { columns, dataStartRow } = parseMergedHeaders(sheet);
     
-    // 3. 定义需要提取的列
-    const targetColumns = {
-      '合同号': '合同号 > 合同号 > 合同号',
-      '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
-      '尺寸': '尺寸 > 尺寸 > 尺寸',
-      '签订日期': '签订日期',
-      '码头': '码头',
-      '未计划重量': '坯料设计 > 未计划 > 重量',
-      '待炼量': '坯料进程 > 待炼量 > 重量',
-      '钢坯待出库': '坯料进程 > 钢坯待出库 > 重量',
-      '已轧制': '轧钢完成 > 轧钢完成 > 重量',
-      '成品在库': '成品在库 > 成品在库 > 重量',
-      '出库结束': '出库结束 > 出库结束 > 重量',
-      '发运': '发运 > 发运 > 重量'
-    };
-
-    // 4. 构建列索引
+    // 构建列索引
     const colIndex = {};
     for (const [colName, fullPath] of Object.entries(targetColumns)) {
       const col = columns.find(c => c.fullPath === fullPath);
@@ -119,10 +119,10 @@ export async function zhongchuan(file) {
       colIndex[colName] = col.index;
     }
 
-    // 5. 处理数据汇总和明细
+    // 处理数据汇总和明细
     const range = XLSX.utils.decode_range(sheet['!ref']);
     const summary = {};
-    const details = []; // 新增明细数据数组
+    const details = [];
     
     // 数值处理函数（保留3位小数）
     const formatNum = (val) => {
@@ -142,6 +142,7 @@ export async function zhongchuan(file) {
       const size = getValue('尺寸');
       const signDate = getValue('签订日期');
       const dock = getValue('码头');
+      const orderWeight = formatNum(getValue('订单量') || 0);
       
       // 跳过无码头数据
       if (!dock || dock.toString().trim() === '') continue;
@@ -164,9 +165,10 @@ export async function zhongchuan(file) {
         summary[month][dock] = {
           未炼钢: 0,
           已轧制: 0,
-          成品在库: 0,
-          出库结束: 0,
-          发运: 0,
+          已船检: 0,
+          已集港: 0,
+          已发运: 0,
+          订单量: 0,
           合同数: 0
         };
       }
@@ -185,9 +187,10 @@ export async function zhongchuan(file) {
       const target = summary[month][dock];
       target.未炼钢 = formatNum(target.未炼钢 + unSmelted);
       target.已轧制 = formatNum(target.已轧制 + rolled);
-      target.成品在库 = formatNum(target.成品在库 + inStock);
-      target.出库结束 = formatNum(target.出库结束 + outbound);
-      target.发运 = formatNum(target.发运 + shipped);
+      target.已船检 = formatNum(target.已船检 + inStock + outbound);
+      target.已集港 = formatNum(target.已集港 + outbound);
+      target.已发运 = formatNum(target.已发运 + shipped);
+      target.订单量 = formatNum(target.订单量 + orderWeight);
       target.合同数++;
       
       // 添加明细数据
@@ -198,6 +201,7 @@ export async function zhongchuan(file) {
         牌号材质代码: materialCode,
         尺寸: size,
         签订日期: signDate instanceof Date ? signDate.toISOString().split('T')[0] : signDate,
+        订单量: orderWeight,
         未计划重量: unplanned,
         待炼量: pendingSmelt,
         钢坯待出库: pendingOutbound,
@@ -206,16 +210,250 @@ export async function zhongchuan(file) {
         成品在库: inStock,
         出库结束: outbound,
         发运: shipped,
-        原始行号: r + 1 // Excel行号从1开始
+        原始行号: r + 1, // Excel行号从1开始
+        数据来源: sheetName
       });
     }
 
+    return { summary, details };
+
+  } catch (error) {
+    console.error(`处理${sheetName}失败:`, error);
+    return { summary: {}, details: [] };
+  }
+}
+
+// 处理兴澄 sheet
+function processXingchengSheet(sheet) {
+  try {
+    const { columns, dataStartRow } = parseSingleHeader(sheet);
+    
+    // 目标列定义
+    const targetColumns = {
+      '月份': '月份',
+      '合同备注': '合同备注',
+      '订货重量': '订货重量',
+      '炼钢下线量': '炼钢下线量',
+      '轧钢下线量': '轧钢下线量',
+      '入库量': '入库量',
+      '发货重量': '发货重量',
+      '书面合同号': '书面合同号'
+    };
+
+    // 构建列索引（增强验证）
+    const colIndex = {};
+    let allColumnsValid = true;
+    const missingColumns = [];
+    
+    for (const [colName, header] of Object.entries(targetColumns)) {
+      const col = columns.find(c => c.header === header);
+      if (!col) {
+        console.error(`❌ 列缺失: ${colName.padEnd(6)} -> ${header}`);
+        missingColumns.push(colName);
+        allColumnsValid = false;
+        continue;
+      }
+      colIndex[colName] = col.index;
+    }
+
+    if (!allColumnsValid) {
+      throw new Error(`缺少必要的列: ${missingColumns.join(', ')}`);
+    }
+
+    // 处理数据
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    const summary = {};
+    const details = [];
+    
+    const formatNum = (val) => {
+      const num = Number(val);
+      return isNaN(num) ? 0 : parseFloat(num.toFixed(3));
+    };
+
+    for (let r = dataStartRow; r <= range.e.r; r++) {
+      const getValue = (colName) => {
+        const cell = sheet[XLSX.utils.encode_cell({ r, c: colIndex[colName] })];
+        return cell ? cell.v : null;
+      };
+
+      const monthRaw = getValue('月份');
+      const remark = getValue('合同备注') || '';
+      const orderWeight = formatNum(getValue('订货重量') || 0);
+      const smelted = formatNum(getValue('炼钢下线量') || 0);
+      const rolled = formatNum(getValue('轧钢下线量') || 0);
+      const stored = formatNum(getValue('入库量') || 0);
+      const shipped = formatNum(getValue('发货重量') || 0);
+      
+      // 处理月份 - 去掉"月"字
+      let month = String(monthRaw).replace('月', '').trim();
+      if (!month || isNaN(month)) continue;
+      
+      // 处理码头 - 从合同备注提取
+      const dock = remark.replace('入库按合约号堆放', '').replace(',', '').trim();
+      if (!dock) continue;
+      
+      // 初始化汇总结构
+      if (!summary[month]) summary[month] = {};
+      if (!summary[month][dock]) {
+        summary[month][dock] = {
+          未炼钢: 0,
+          已轧制: 0,
+          已船检: 0,
+          已集港: 0,
+          已发运: 0,
+          订单量: 0,
+          合同数: 0
+        };
+      }
+      
+      // 计算未炼钢（订单量 - 炼钢下线量）
+      const unSmelted = formatNum(orderWeight - smelted);
+      
+      // 累加汇总数据
+      const target = summary[month][dock];
+      target.未炼钢 = formatNum(target.未炼钢 + unSmelted);
+      target.已轧制 = formatNum(target.已轧制 + rolled);
+      target.已船检 = formatNum(target.已船检 + stored);
+      target.已集港 = 0; // 兴澄没有出库结束数据
+      target.已发运 = formatNum(target.已发运 + shipped);
+      target.订单量 = formatNum(target.订单量 + orderWeight);
+      target.合同数++;
+      
+      // 添加明细数据
+      details.push({
+        月份: month,
+        码头: dock,
+        书面合同号: getValue('书面合同号'),
+        订单量: orderWeight,
+        未炼钢: unSmelted,
+        已轧制: rolled,
+        已船检: stored,
+        已集港: 0,
+        已发运: shipped,
+        原始行号: r + 1,
+        数据来源: '兴澄'
+      });
+    }
+
+    return { summary, details };
+
+  } catch (error) {
+    console.error('处理兴澄失败:', error);
+    return { summary: {}, details: [] };
+  }
+}
+
+// 合并多个sheet的汇总数据
+function mergeSummaries(summaries) {
+  const mergedSummary = {};
+  
+  summaries.forEach(summary => {
+    for (const month in summary) {
+      if (!mergedSummary[month]) mergedSummary[month] = {};
+      
+      for (const dock in summary[month]) {
+        if (!mergedSummary[month][dock]) {
+          mergedSummary[month][dock] = { ...summary[month][dock] };
+        } else {
+          const target = mergedSummary[month][dock];
+          const source = summary[month][dock];
+          
+          target.未炼钢 = formatNum(target.未炼钢 + source.未炼钢);
+          target.已轧制 = formatNum(target.已轧制 + source.已轧制);
+          target.已船检 = formatNum(target.已船检 + source.已船检);
+          target.已集港 = formatNum(target.已集港 + source.已集港);
+          target.已发运 = formatNum(target.已发运 + source.已发运);
+          target.订单量 = formatNum(target.订单量 + source.订单量);
+          target.合同数 += source.合同数;
+        }
+      }
+    }
+  });
+  
+  return mergedSummary;
+}
+
+// 辅助函数：格式化数字
+function formatNum(val) {
+  return parseFloat(Number(val).toFixed(3));
+}
+
+export async function zhongchuan(file) {
+  try {
+    const workbook = await readExcelFile(file);
+    const allSummaries = [];
+    const allDetails = [];
+    
+    // 处理营口 sheet
+    if (workbook.SheetNames.includes('营口')) {
+      const sheet = workbook.Sheets['营口'];
+      const targetColumns = {
+        '合同号': '合同号 > 合同号 > 合同号',
+        '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
+        '尺寸': '尺寸 > 尺寸 > 尺寸',
+        '签订日期': '签订日期',
+        '码头': '码头',
+        '订单量': '订单量 > 订单量 > 重量', // 营口特有
+        '未计划重量': '坯料设计 > 未计划 > 重量',
+        '待炼量': '坯料进程 > 待炼量 > 重量',
+        '钢坯待出库': '坯料进程 > 钢坯待出库 > 重量',
+        '已轧制': '轧钢完成 > 轧钢完成 > 重量',
+        '成品在库': '成品在库 > 成品在库 > 重量',
+        '出库结束': '出库结束 > 出库结束 > 重量',
+        '发运': '发运 > 发运 > 重量'
+      };
+      
+      const { summary, details } = processMergedSheet(sheet, targetColumns, '营口');
+      allSummaries.push(summary);
+      allDetails.push(...details);
+    } else {
+      console.warn('工作簿中缺少"营口"工作表');
+    }
+    
+    // 处理敬业 sheet
+    if (workbook.SheetNames.includes('敬业')) {
+      const sheet = workbook.Sheets['敬业'];
+      const targetColumns = {
+        '合同号': '合同号 > 合同号 > 合同号',
+        '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
+        '尺寸': '尺寸 > 尺寸 > 尺寸',
+        '签订日期': '签订日期',
+        '码头': '码头',
+        '订单量': '订单量 > 订单量 > 重量', // 敬业特有
+        '未计划重量': '坯料设计 > 未计划 > 重量',
+        '待炼量': '坯料进程 > 待炼量 > 重量',
+        '钢坯待出库': '坯料进程 > 钢坯待出库 > 重量',
+        '已轧制': '轧钢完成 > 轧钢完成 > 重量',
+        '成品在库': '成品在库 > 成品在库 > 重量',
+        '出库结束': '出库结束 > 出库结束 > 重量',
+        '发运': '发运 > 发运 > 重量'
+      };
+      
+      const { summary, details } = processMergedSheet(sheet, targetColumns, '敬业');
+      allSummaries.push(summary);
+      allDetails.push(...details);
+    } else {
+      console.warn('工作簿中缺少"敬业"工作表');
+    }
+    
+    // 处理兴澄 sheet
+    if (workbook.SheetNames.includes('兴澄')) {
+      const sheet = workbook.Sheets['兴澄'];
+      const { summary, details } = processXingchengSheet(sheet);
+      allSummaries.push(summary);
+      allDetails.push(...details);
+    } else {
+      console.warn('工作簿中缺少"兴澄"工作表');
+    }
+    
+    // 合并所有汇总数据
+    const mergedSummary = mergeSummaries(allSummaries);
+    
     return {
       success: true,
-      summary: summary,
-      details: details, // 新增明细数据
-      columns: colIndex,
-      sheetName: sheetName
+      summary: mergedSummary,
+      details: allDetails,
+      sheetNames: workbook.SheetNames
     };
 
   } catch (error) {

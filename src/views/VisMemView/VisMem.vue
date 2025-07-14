@@ -415,7 +415,7 @@ const submitPost = async () => {
         'Content-Type': 'multipart/form-data',
       },
     });
-
+ 
     if (response.data.success) {
       showToast('发表成功');
       inputText.value = '';
