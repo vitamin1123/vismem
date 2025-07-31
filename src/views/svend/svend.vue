@@ -52,6 +52,29 @@
     </div>
   </template>
 
+  <template v-else-if="currentCompany === '常石'">
+    <div class="stats-dialog">
+      <div v-if="changshiData">
+        <div v-for="(dockData, month) in changshiData" :key="month" class="month-block">
+          <h3>{{ month }}月</h3>
+          <div v-for="(stats, dock) in dockData" :key="dock" class="dock-block">
+            <h4>{{ dock }}</h4>
+            <pre>
+未炼钢: {{ stats.未炼钢 }}吨
+已轧制: {{ stats.已轧制 }}吨
+已船检: {{ stats.已船检 }}吨
+已集港: {{ stats.已集港 }}吨
+已发运: {{ stats.已发运 }}吨
+            </pre>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <p>暂无数据</p>
+      </div>
+    </div>
+  </template>
+
   <template v-else-if="currentCompany === '朗度'">
     <div class="stats-dialog">
       <div v-if="langduData">
@@ -97,7 +120,7 @@
       </div>
     </div>
   </template>
-  <template v-else-if="currentCompany === '兴澄'">
+  <template v-else-if="currentCompany === '天楹'">
     <div class="stats-dialog">
       <div v-if="xingchengData">
         <div v-for="(stats, month) in xingchengData" :key="month" class="month-block">
@@ -365,6 +388,7 @@ import { zhongchuan } from './components/parse_zhongchuan';
 import { xingcheng } from './components/parse_xingcheng'
 import { sanding } from './components/parse_sanding'
 import { shagang } from './components/parse_shagang'
+import { changshi } from './components/parse_changshi'
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'vue-router'
 import { HotTable } from '@handsontable/vue3';
@@ -410,7 +434,7 @@ const upkey = ref(Date.now()); // 初始化为当前时间戳
 const authStore = useAuthStore()
 const router = useRouter()
 const currentCompany = ref('');
-// '特变', '沙钢', '卫源', '德瑞斯', '三鼎','朗度','兴澄','中船'
+// '特变', '沙钢', '卫源', '德瑞斯', '三鼎','朗度','天楹','中船'
 const companies = ref([]);
 const totalOrder = ref(0);
 const totalOrderFetched = ref(false);
@@ -491,10 +515,12 @@ const handleTimelineClick = async(record) => {
     } else if(company === '朗度'){
 
       langduData.value = JSON.parse(detailData.data);
-    } else if(company === '兴澄'){
+    } else if(company === '天楹'){
       xingchengData.value = JSON.parse(detailData.data);
     } else if(company === '三鼎'){
       sandingData.value = JSON.parse(detailData.data);
+    } else if(company === '常石'){
+      changshiData.value = JSON.parse(detailData.data);
     }
 
 
@@ -529,6 +555,8 @@ const sandingData = ref(null);
 const sandingData_detail = ref(null);
 const shagangData = ref(null); 
 const shagangData_detail = ref(null);
+const changshiData = ref(null); 
+const changshiData_detail = ref(null);
 
 
 const uploadConfig = ref({
@@ -683,7 +711,7 @@ const showStatistics = async (result) => {
       deruisiData.value = result.summary;
       deruisiData_detail.value = result.details;
 
-    }else if (currentCompany.value === '兴澄'){
+    }else if (currentCompany.value === '天楹'){
       xingchengData.value = result.summary;
       xingchengData_detail.value = result.details;
 
@@ -694,6 +722,10 @@ const showStatistics = async (result) => {
     }else if (currentCompany.value === '沙钢'){
       shagangData.value = result.summary;
       shagangData_detail.value = result.details;
+
+    }else if (currentCompany.value === '常石'){
+      changshiData.value = result.summary;
+      changshiData_detail.value = result.details;
 
     }else {
       const resolvedData = {};
@@ -865,13 +897,13 @@ const beforeUpload = async(file) => {
         });
       }
     }
-    else if (currentCompany.value === '兴澄') {
+    else if (currentCompany.value === '天楹') {
       const result = await xingcheng(file);
       console.log("PR--xingcheng:  ",result)
       if (result.success) {
-        console.log('兴澄数据:', result);
+        console.log('天楹数据:', result);
         await showStatistics(result);
-        MessagePlugin.success('兴澄数据Excel解析成功');
+        MessagePlugin.success('天楹数据Excel解析成功');
       } else {
         console.error('处理失败:', result);
         MessagePlugin.error({
@@ -903,6 +935,22 @@ const beforeUpload = async(file) => {
         console.log('沙钢数据:', result);
         await showStatistics(result);
         MessagePlugin.success('沙钢数据Excel解析成功');
+      } else {
+        console.error('处理失败:', result);
+        MessagePlugin.error({
+          content: result.message,
+          duration: 0, // 不自动关闭
+          closeBtn: true, // 显示关闭按钮
+        });
+      }
+    }
+    else if (currentCompany.value === '常石') {
+      const result = await changshi(file);
+      // console.log("PR--shagang:  ",result)
+      if (result.success) {
+        console.log('常石数据:', result);
+        await showStatistics(result);
+        MessagePlugin.success('常石数据Excel解析成功');
       } else {
         console.error('处理失败:', result);
         MessagePlugin.error({
@@ -963,9 +1011,9 @@ const up_extract_data = async () => {
           dataToSend = deruisiData.value;
           dataToSendAll = deruisiData_detail.value;
           orderMonth = Object.keys(dataToSend)[0] || '';
-        }else if (currentCompany.value === '兴澄') {
+        }else if (currentCompany.value === '天楹') {
           if (!xingchengData.value) {
-            MessagePlugin.warning('没有可提交的兴澄数据');
+            MessagePlugin.warning('没有可提交的天楹数据');
             return;
           }
           dataToSend = xingchengData.value;
@@ -983,6 +1031,14 @@ const up_extract_data = async () => {
             const months = sandingData.value.map(item => parseInt(item.月份));
             orderMonth = Math.max(...months).toString();
           }
+        }else if (currentCompany.value === '常石') {
+          if (!changshiData.value) {
+            MessagePlugin.warning('没有可提交的常石数据');
+            return;
+          }
+          dataToSend = changshiData.value;
+          dataToSendAll = changshiData_detail.value;
+          orderMonth = Object.keys(dataToSend)[0] || '';
         }else if (currentCompany.value === '沙钢') {
           if (!shagangData.value) {
             MessagePlugin.warning('没有可提交的沙钢数据');

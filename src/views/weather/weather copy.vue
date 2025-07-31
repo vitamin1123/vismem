@@ -90,38 +90,51 @@
             
             <!-- 24小时预报 -->
             <div class="dashboard-card hourly-forecast-card">
-              <div class="card-title">24小时预报</div>
-              <div class="hourly-forecast-container">
-                <div class="hourly-temp-container">
-                  <div 
-                    v-for="(hour, index) in hourlyForecast" 
-                    :key="'temp-'+index" 
-                    class="hourly-temp"
-                    :style="{ height: calculateTempHeight(hour.temp_fc) + 'px' }"
-                  >
-                    <span>{{ hour.temp_fc }}°</span>
-                  </div>
-                </div>
-                <div class="hourly-time-container">
-                  <div 
-                    v-for="(hour, index) in hourlyForecast" 
-                    :key="'time-'+index" 
-                    class="hourly-time"
-                  >
-                    {{ formatHour24(hour.data_time) }}
-                  </div>
-                </div>
-                <div class="hourly-weather-container">
-                  <div 
-                    v-for="(hour, index) in hourlyForecast" 
-                    :key="'weather-'+index" 
-                    class="hourly-weather"
-                  >
-                    <i :class="getWeatherIcon(hour.text)"></i>
-                  </div>
-                </div>
-              </div>
-            </div>
+  <div class="card-title">24小时预报</div>
+  <div class="hourly-forecast-container">
+    <div class="hourly-temp-container">
+      <div 
+        v-for="(hour, index) in hourlyForecast" 
+        :key="'temp-'+index" 
+        class="hourly-temp"
+        :style="{ height: calculateTempHeight(hour.temp_fc) + 'px' }"
+      >
+        <span>{{ hour.temp_fc }}°</span>
+      </div>
+    </div>
+    <div class="hourly-time-container">
+      <div 
+        v-for="(hour, index) in hourlyForecast" 
+        :key="'time-'+index" 
+        class="hourly-time"
+      >
+        {{ formatHour24(hour.data_time) }}
+      </div>
+    </div>
+    <!-- 新增：天气状况文字显示 -->
+    <div class="hourly-weather-container">
+      <div 
+        v-for="(hour, index) in hourlyForecast" 
+        :key="'weather-'+index" 
+        class="hourly-weather"
+      >
+        <i :class="getWeatherIcon(hour.text)"></i>
+        <span class="weather-text">{{ hour.text }}</span>
+      </div>
+    </div>
+    <!-- 新增：风力信息显示 -->
+    <div class="hourly-wind-container">
+      <div 
+        v-for="(hour, index) in hourlyForecast" 
+        :key="'wind-'+index" 
+        class="hourly-wind"
+      >
+        <i class="td-icon t-icon-wind"></i>
+        <span>{{ hour.wind_dir }} {{ hour.wind_class }}</span>
+      </div>
+    </div>
+  </div>
+</div>
           </div>
         </div>
         
@@ -924,7 +937,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  height: 120px;
+  height: 54px;
   padding: 0 10px;
 }
 
@@ -1127,5 +1140,56 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+.hourly-weather-container {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+  margin-top: 8px;
+}
+
+.hourly-weather {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 30px;
+}
+
+.hourly-weather i {
+  font-size: 1.2rem;
+  color: #ffde59;
+  margin-bottom: 4px;
+}
+
+.weather-text {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.hourly-wind-container {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+  margin-top: 8px;
+}
+
+.hourly-wind {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 30px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.hourly-wind i {
+  font-size: 0.9rem;
+  color: #4d96ff;
+  margin-bottom: 4px;
 }
 </style>

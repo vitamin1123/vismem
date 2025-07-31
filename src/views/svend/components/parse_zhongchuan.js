@@ -107,6 +107,8 @@ function parseSingleHeader(sheet) {
 }
 
 // 处理营口和敬业 sheet
+
+// 处理营口和敬业 sheet
 function processMergedSheet(sheet, targetColumns, sheetName) {
   try {
     const { columns, dataStartRow } = parseMergedHeaders(sheet);
@@ -193,24 +195,19 @@ function processMergedSheet(sheet, targetColumns, sheetName) {
       target.订单量 = formatNum(target.订单量 + orderWeight);
       target.合同数++;
       
-      // 添加明细数据
+      // 添加简化后的明细数据
       details.push({
         月份: month,
         码头: dock,
         合同号: contractNo,
-        牌号材质代码: materialCode,
+        牌号材质: materialCode, // 统一字段名
         尺寸: size,
-        签订日期: signDate instanceof Date ? signDate.toISOString().split('T')[0] : signDate,
         订单量: orderWeight,
-        未计划重量: unplanned,
-        待炼量: pendingSmelt,
-        钢坯待出库: pendingOutbound,
         未炼钢: unSmelted,
         已轧制: rolled,
-        成品在库: inStock,
-        出库结束: outbound,
-        发运: shipped,
-        原始行号: r + 1, // Excel行号从1开始
+        已船检: formatNum(inStock + outbound),
+        已集港: outbound,
+        已发运: shipped,
         数据来源: sheetName
       });
     }
@@ -228,7 +225,7 @@ function processXingchengSheet(sheet) {
   try {
     const { columns, dataStartRow } = parseSingleHeader(sheet);
     
-    // 目标列定义
+    // 目标列定义（添加牌号材质字段）
     const targetColumns = {
       '月份': '月份',
       '合同备注': '合同备注',
@@ -237,10 +234,14 @@ function processXingchengSheet(sheet) {
       '轧钢下线量': '轧钢下线量',
       '入库量': '入库量',
       '发货重量': '发货重量',
-      '书面合同号': '书面合同号'
+      '书面合同号': '书面合同号',
+      '订货厚度': '订货厚度',
+      '订货宽度': '订货宽度',
+      '订货长度': '订货长度',
+      '牌号（钢级）': '牌号（钢级）' // 新增牌号材质字段
     };
 
-    // 构建列索引（增强验证）
+    // 构建列索引
     const colIndex = {};
     let allColumnsValid = true;
     const missingColumns = [];
@@ -283,6 +284,7 @@ function processXingchengSheet(sheet) {
       const rolled = formatNum(getValue('轧钢下线量') || 0);
       const stored = formatNum(getValue('入库量') || 0);
       const shipped = formatNum(getValue('发货重量') || 0);
+      const steelGrade = getValue('牌号（钢级）') || ''; // 获取牌号材质
       
       // 处理月份 - 去掉"月"字
       let month = String(monthRaw).replace('月', '').trim();
@@ -291,6 +293,15 @@ function processXingchengSheet(sheet) {
       // 处理码头 - 从合同备注提取
       const dock = remark.replace('入库按合约号堆放', '').replace(',', '').trim();
       if (!dock) continue;
+      
+      // 拼接尺寸（厚度*宽度*长度）
+      const thickness = getValue('订货厚度') || '';
+      const width = getValue('订货宽度') || '';
+      const length = getValue('订货长度') || '';
+      const size = [thickness, width, length]
+        .map(val => val.toString().trim())
+        .filter(Boolean)
+        .join('*');
       
       // 初始化汇总结构
       if (!summary[month]) summary[month] = {};
@@ -314,23 +325,24 @@ function processXingchengSheet(sheet) {
       target.未炼钢 = formatNum(target.未炼钢 + unSmelted);
       target.已轧制 = formatNum(target.已轧制 + rolled);
       target.已船检 = formatNum(target.已船检 + stored);
-      target.已集港 = 0; // 兴澄没有出库结束数据
+      target.已集港 = formatNum(target.已集港 + stored);; // 兴澄没有出库结束数据
       target.已发运 = formatNum(target.已发运 + shipped);
       target.订单量 = formatNum(target.订单量 + orderWeight);
       target.合同数++;
       
-      // 添加明细数据
+      // 添加统一格式的明细数据
       details.push({
         月份: month,
         码头: dock,
-        书面合同号: getValue('书面合同号'),
+        合同号: getValue('书面合同号'),
+        牌号材质: steelGrade, // 添加牌号材质
+        尺寸: size,
         订单量: orderWeight,
         未炼钢: unSmelted,
         已轧制: rolled,
         已船检: stored,
         已集港: 0,
         已发运: shipped,
-        原始行号: r + 1,
         数据来源: '兴澄'
       });
     }
@@ -342,6 +354,7 @@ function processXingchengSheet(sheet) {
     return { summary: {}, details: [] };
   }
 }
+
 
 // 合并多个sheet的汇总数据
 function mergeSummaries(summaries) {

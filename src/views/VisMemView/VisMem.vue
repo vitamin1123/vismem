@@ -215,7 +215,7 @@ const uploaderRef = ref<UploaderInstance>();
 const posts = ref<Post[]>([])
 
 const showCompanySelect = computed(() => {
-  return user.userCode === '10030203' || user.userCode === '10001007';
+  return user.userCode === '10030203' || user.userCode === '10001007' || user.userCode === '10004647';
 });
 
 interface CompanyOption {

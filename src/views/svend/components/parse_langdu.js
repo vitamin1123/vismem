@@ -280,16 +280,18 @@ export async function langdu(file) {
     // 1. 读取Excel文件
     const workbook = await readExcelFile(file);
     
-    // 处理营口数据
+    // 查找三个工作表：营口、重钢和敬业
     const yingkouSheetName = workbook.SheetNames.find(name => name.includes('营口'));
     const chonggangSheetName = workbook.SheetNames.find(name => name.includes('重钢'));
+    const jingyeSheetName = workbook.SheetNames.find(name => name.includes('敬业')); // 新增敬业表
     
-    if (!yingkouSheetName && !chonggangSheetName) {
-      throw new Error('找不到营口或重钢工作表');
+    if (!yingkouSheetName && !chonggangSheetName && !jingyeSheetName) {
+      throw new Error('找不到营口、重钢或敬业工作表');
     }
 
     let yingkouResult = { summary: {}, details: [] };
     let chonggangResult = { summary: {}, details: [] };
+    let jingyeResult = { summary: {}, details: [] }; // 新增敬业结果
 
     // 处理营口sheet
     if (yingkouSheetName) {
@@ -461,25 +463,181 @@ export async function langdu(file) {
       chonggangResult = parseChonggangSheet(chonggangSheet);
     }
 
-    // 合并两个sheet的数据
-    const mergedSummary = {};
-    const mergedDetails = [...yingkouResult.details, ...chonggangResult.details];
+    // 处理敬业sheet - 新增部分
+    if (jingyeSheetName) {
+      const jingyeSheet = workbook.Sheets[jingyeSheetName];
+      
+      if (!jingyeSheet) {
+        throw new Error(`找不到工作表: ${jingyeSheetName}`);
+      }
 
-    // 合并营口和重钢的summary
+      // 解析表头（复用营口逻辑）
+      const { columns, dataStartRow } = parseMergedHeaders(jingyeSheet);
+      
+      // 定义需要提取的列（与营口相同）
+      const targetColumns = {
+        '合同号': '合同号 > 合同号 > 合同号',
+        '牌号/材质代码': '牌号/材质代码 > 牌号/材质代码 > 牌号/材质代码',
+        '尺寸': '尺寸 > 尺寸 > 尺寸',
+        '合同月份': '合同月份 > 合同月份 > 合同月份',
+        '码头': '码头 > 码头 > 码头',
+        '未计划重量': '坯料设计 > 未计划 > 重量',
+        '未下炼钢重量': '坯料进程 > 未下炼钢 > 重量',
+        '轧钢完成重量': '轧钢完成 > 轧钢完成 > 重量',
+        '成品在库重量': '成品在库 > 成品在库 > 重量',
+        '出库结束重量': '出库结束 > 出库结束 > 重量',
+        '已发运重量': '发运 > 发运 > 重量',
+        '订单量': '订单量 > 订单量 > 重量'
+      };
+
+      // 构建列索引
+      const colIndex = {};
+      for (const [colName, fullPath] of Object.entries(targetColumns)) {
+        const col = columns.find(c => c.fullPath === fullPath);
+        if (!col) throw new Error(`找不到列: ${fullPath}`);
+        colIndex[colName] = col.index;
+      }
+
+      // 处理数据汇总和明细（与营口相同）
+      const range = XLSX.utils.decode_range(jingyeSheet['!ref']);
+      
+      const formatNum = (val) => {
+        const num = Number(val);
+        if (isNaN(num) || num < 0) return 0;
+        return parseFloat(num.toFixed(3));
+      };
+
+      for (let r = dataStartRow; r <= range.e.r; r++) {
+        const getValue = (colName) => {
+          const cell = jingyeSheet[XLSX.utils.encode_cell({ r, c: colIndex[colName] })];
+          return cell ? cell.v : null;
+        };
+
+        const contractNo = getValue('合同号');
+        const materialCode = getValue('牌号/材质代码');
+        const size = getValue('尺寸');
+        const contractMonth = getValue('合同月份');
+        const dock = getValue('码头');
+        const orderWeight = formatNum(getValue('订单量'));
+        
+        if (!contractNo || !materialCode || !size || !contractMonth || !dock) {
+          continue;
+        }
+        
+        let month = null;
+        if (typeof contractMonth === 'string') {
+          const monthMatch = contractMonth.match(/^(\d{1,2})月?$/);
+          if (monthMatch) {
+            month = String(parseInt(monthMatch[1]));
+          }
+        } else if (contractMonth instanceof Date) {
+          month = String(contractMonth.getMonth() + 1);
+        }
+        
+        if (!month || !/^[1-9]|1[0-2]$/.test(month)) {
+          continue;
+        }
+        
+        if (typeof dock !== 'string' || dock.trim() === '') {
+          continue;
+        }
+        
+        if (!jingyeResult.summary[month]) jingyeResult.summary[month] = {};
+        if (!jingyeResult.summary[month][dock]) {
+          jingyeResult.summary[month][dock] = {
+            未炼钢: 0,
+            已轧制: 0,
+            已船检: 0,
+            已集港: 0,
+            已发运: 0,
+            总订单量: 0,
+            合同数: 0
+          };
+        }
+        
+        const unplanned = formatNum(getValue('未计划重量'));
+        const unsteeled = formatNum(getValue('未下炼钢重量'));
+        const rolled = formatNum(getValue('轧钢完成重量'));
+        const inStock = formatNum(getValue('成品在库重量'));
+        const outbound = formatNum(getValue('出库结束重量'));
+        const shipped = formatNum(getValue('已发运重量'));
+        
+        const unsteelTotal = formatNum(unplanned + unsteeled);
+        const inspected = formatNum(inStock + outbound);
+        const gathered = outbound;
+        
+        const target = jingyeResult.summary[month][dock];
+        target.未炼钢 += unsteelTotal;
+        target.已轧制 += rolled;
+        target.已船检 += inspected;
+        target.已集港 += gathered;
+        target.已发运 += shipped;
+        target.总订单量 += orderWeight;
+        target.合同数++;
+
+        jingyeResult.details.push({
+          月份: month,
+          码头: dock.trim(),
+          合同号: contractNo,
+          牌号材质代码: materialCode,
+          尺寸: size,
+          合同月份: contractMonth instanceof Date ? 
+            contractMonth.toISOString().split('T')[0] : 
+            contractMonth.toString().trim(),
+          未计划重量: unplanned,
+          未下炼钢重量: unsteeled,
+          未炼钢合计: unsteelTotal,
+          轧钢完成重量: rolled,
+          成品在库重量: inStock,
+          出库结束重量: outbound,
+          已船检合计: inspected,
+          已集港: gathered,
+          已发运: shipped,
+          订单量: orderWeight
+        });
+      }
+
+      // 格式化敬业汇总数据
+      for (const month of Object.keys(jingyeResult.summary)) {
+        for (const dock of Object.keys(jingyeResult.summary[month])) {
+          const target = jingyeResult.summary[month][dock];
+          target.未炼钢 = parseFloat(target.未炼钢.toFixed(3));
+          target.已轧制 = parseFloat(target.已轧制.toFixed(3));
+          target.已船检 = parseFloat(target.已船检.toFixed(3));
+          target.已集港 = parseFloat(target.已集港.toFixed(3));
+          target.已发运 = parseFloat(target.已发运.toFixed(3));
+          target.总订单量 = parseFloat(target.总订单量.toFixed(3));
+        }
+      }
+    }
+    // 新增敬业处理结束
+
+    // 合并三个sheet的数据
+    const mergedSummary = {};
+    const mergedDetails = [
+      ...yingkouResult.details,
+      ...chonggangResult.details,
+      ...jingyeResult.details  // 添加敬业明细
+    ];
+
+    // 合并营口、重钢和敬业的summary
     const allMonths = new Set([
       ...Object.keys(yingkouResult.summary),
-      ...Object.keys(chonggangResult.summary)
+      ...Object.keys(chonggangResult.summary),
+      ...Object.keys(jingyeResult.summary)  // 添加敬业月份
     ]);
 
     for (const month of allMonths) {
       mergedSummary[month] = {};
       
-      // 合并码头数据
-      const yingkouDocks = yingkouResult.summary[month] ? Object.keys(yingkouResult.summary[month]) : [];
-      const chonggangDocks = chonggangResult.summary[month] ? Object.keys(chonggangResult.summary[month]) : [];
-      const allDocks = new Set([...yingkouDocks, ...chonggangDocks]);
+      // 获取所有码头
+      const docks = new Set([
+        ...(yingkouResult.summary[month] ? Object.keys(yingkouResult.summary[month]) : []),
+        ...(chonggangResult.summary[month] ? Object.keys(chonggangResult.summary[month]) : []),
+        ...(jingyeResult.summary[month] ? Object.keys(jingyeResult.summary[month]) : [])  // 添加敬业码头
+      ]);
       
-      for (const dock of allDocks) {
+      for (const dock of docks) {
         mergedSummary[month][dock] = {
           未炼钢: 0,
           已轧制: 0,
@@ -508,12 +666,24 @@ export async function langdu(file) {
           const cgData = chonggangResult.summary[month][dock];
           mergedSummary[month][dock].未炼钢 += cgData.未炼钢;
           mergedSummary[month][dock].未轧制 += cgData.未轧制;
-          mergedSummary[month][dock].已轧制 += cgData.已轧制; // 累加已轧制重量
+          mergedSummary[month][dock].已轧制 += cgData.已轧制;
           mergedSummary[month][dock].已船检 += cgData.已船检;
           mergedSummary[month][dock].已集港 += cgData.已集港;
           mergedSummary[month][dock].已发运 += cgData.已发运;
           mergedSummary[month][dock].总订单量 += cgData.总订单量;
           mergedSummary[month][dock].合同数 += cgData.合同数;
+        }
+        
+        // 累加敬业数据
+        if (jingyeResult.summary[month] && jingyeResult.summary[month][dock]) {
+          const jyData = jingyeResult.summary[month][dock];
+          mergedSummary[month][dock].未炼钢 += jyData.未炼钢;
+          mergedSummary[month][dock].已轧制 += jyData.已轧制;
+          mergedSummary[month][dock].已船检 += jyData.已船检;
+          mergedSummary[month][dock].已集港 += jyData.已集港;
+          mergedSummary[month][dock].已发运 += jyData.已发运;
+          mergedSummary[month][dock].总订单量 += jyData.总订单量;
+          mergedSummary[month][dock].合同数 += jyData.合同数;
         }
         
         // 格式化数字
@@ -538,7 +708,8 @@ export async function langdu(file) {
       details: mergedDetails,
       sheetNames: {
         yingkou: yingkouSheetName,
-        chonggang: chonggangSheetName
+        chonggang: chonggangSheetName,
+        jingye: jingyeSheetName  // 添加敬业表名
       }
     };
 
