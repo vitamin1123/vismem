@@ -17,6 +17,7 @@ import guest from '@/views/anbao/detail/guest.vue'
 import guest_car from '@/views/anbao/detail/guest_car.vue'
 import xunluo from '@/views/anbao/detail/xunluo.vue'
 import weather from '@/views/weather/weather.vue'
+import jixiao from '@/views/jixiao/jixiao.vue'
 import css from '@/views/CSS/CSS.vue'
 import apiClient from '@/plugins/axios'
 import advice_desk from '@/views/advice_desk/advice_desk.vue'
@@ -40,6 +41,14 @@ const router = createRouter({
       component: meetingRecord,
       meta: {
         title: '班前会记录' // 自定义标题
+      }
+    },
+    {
+      path: '/jixiao',
+      name: 'jixiao',
+      component: jixiao,
+      meta: {
+        title: '年度绩效' // 自定义标题
       }
     },
     {
@@ -224,7 +233,7 @@ router.beforeEach(async (to, from, next) => {
   // 如果没有 token 并且 authStore 中也没有 token，重定向到 404
   if (!tokenFromQuery && !authStore.token) {
     console.log('确实没有token')
-    if (to.path === '/login' || to.path === '/404' || to.path === '/advice' || to.path === '/css' || to.path ==='weather') {
+    if (to.path === '/login' || to.path === '/404' || to.path === '/advice'  || to.path ==='jixiao') {
       return next()
     }
     // return next({ path: '/404' })

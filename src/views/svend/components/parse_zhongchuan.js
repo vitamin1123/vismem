@@ -450,14 +450,14 @@ export async function zhongchuan(file) {
     }
     
     // 处理兴澄 sheet
-    if (workbook.SheetNames.includes('兴澄')) {
-      const sheet = workbook.Sheets['兴澄'];
-      const { summary, details } = processXingchengSheet(sheet);
-      allSummaries.push(summary);
-      allDetails.push(...details);
-    } else {
-      console.warn('工作簿中缺少"兴澄"工作表');
-    }
+    // if (workbook.SheetNames.includes('兴澄')) {
+    //   const sheet = workbook.Sheets['兴澄'];
+    //   const { summary, details } = processXingchengSheet(sheet);
+    //   allSummaries.push(summary);
+    //   allDetails.push(...details);
+    // } else {
+    //   console.warn('工作簿中缺少"兴澄"工作表');
+    // }
     
     // 合并所有汇总数据
     const mergedSummary = mergeSummaries(allSummaries);
