@@ -1,6 +1,13 @@
 <template>
   <div class="performance-page">
-    <van-nav-bar title="年度绩效详情" fixed placeholder />
+    <van-nav-bar fixed placeholder>
+      <template #left><span style="float: left;">概览</span></template>
+      <template #right>
+        <div class="nav-bar-summary">
+          应发：{{ totalPayableText }} / 代扣：{{ totalDeductionsText }} / 实发：{{ finalAmountText }}
+        </div>
+      </template>
+    </van-nav-bar>
 
     <van-pull-refresh v-model="refreshing" @refresh="onRefresh" class="performance-content">
       <van-skeleton v-if="loading && !info" title avatar :row="5" class="skeleton-placeholder" />
@@ -8,80 +15,100 @@
       <van-empty v-if="!loading && !info" description="暂未查询到您的年度绩效数据" />
 
       <div v-if="info" v-motion-fade>
-        <div class="user-card" v-motion-slide-visible-bottom>
-          <div class="avatar">
-            <span>{{ info.姓名?.slice(0, 1) ?? '' }}</span>
-          </div>
-          <div class="user-info">
-            <div class="name">{{ info.姓名 ?? '未知姓名' }}</div>
-            <div class="sub-info">{{ info.工号 ?? '-' }} · {{ info.公司职务职称 ?? '暂无职务' }}</div>
-          </div>
-        </div>
+        <van-tabs v-model:active="activeTab" class="details-tabs" line-width="20">
+          <van-tab title="基本信息">
+            <div style="padding-top: 12px;">
+            <div class="user-card" v-motion-slide-visible-bottom>
+              <div class="avatar">
+                <span>{{ info.姓名?.slice(0, 1) ?? '' }}</span>
+              </div>
+              <div class="user-info">
+                <div class="name">{{ info.姓名 ?? '未知姓名' }}</div>
+                <div class="sub-info">{{ info.工号 ?? '-' }} · {{ info.公司职务职称 ?? '暂无职务' }}</div>
+              </div>
+            </div>
 
-        <van-grid :column-num="2" :border="false" class="stats-grid" v-motion-slide-visible-bottom>
-          <van-grid-item>
-            <template #text>
-              <div class="stat-value">{{ info.年度绩效考核分 ?? '-' }}</div>
-              <div class="stat-label">年度绩效考评分</div>
-            </template>
-          </van-grid-item>
-          <van-grid-item>
-            <template #text>
-              <div class="stat-value">{{ info.年度工作日 ?? '-' }}</div>
-              <div class="stat-label">年度工作日</div>
-            </template>
-          </van-grid-item>
-          <van-grid-item>
-             <template #text>
-              <div class="stat-value">{{ info.年度在岗日 ?? '-' }}</div>
-              <div class="stat-label">年度在岗日</div>
-            </template>
-          </van-grid-item>
-          <van-grid-item>
-             <template #text>
-              <div class="stat-value">{{ info.年度缺勤日 ?? '-' }}</div>
-              <div class="stat-label">年度缺勤日</div>
-            </template>
-          </van-grid-item>
-        </van-grid>
-
-        <div v-motion-slide-visible-bottom>
-          <van-tabs v-model:active="activeTab" class="details-tabs" line-width="20">
-            <van-tab title="应发项目">
-              <van-cell-group inset class="details-card">
-                 <template v-if="payableItems.length > 0">
-                    <van-cell
-                      v-for="item in payableItems"
-                      :key="item.label"
-                      :title="item.label"
-                      :value="formatCurrency(item.value)"
-                    />
-                 </template>
-                 <van-empty v-else description="无应发项目" />
-              </van-cell-group>
-            </van-tab>
-            <van-tab title="代扣代缴">
-              <van-cell-group inset class="details-card">
-                 <template v-if="deductionItems.length > 0">
-                  <van-cell
-                    v-for="item in deductionItems"
-                    :key="item.label"
-                    :title="item.label"
-                    :value="formatValue(item.value)"
-                  />
-                 </template>
-                 <van-empty v-else description="无代扣代缴项目" />
-              </van-cell-group>
-            </van-tab>
-          </van-tabs>
-        </div>
-
+            <van-grid :column-num="2" :border="false" class="stats-grid" v-motion-slide-visible-bottom>
+              <van-grid-item>
+                <template #text>
+                  <div class="stat-value">{{ info.年度绩效考核分 ?? '-' }}</div>
+                  <div class="stat-label">年度绩效考评分</div>
+                </template>
+              </van-grid-item>
+              <van-grid-item>
+                <template #text>
+                  <div class="stat-value">{{ info.年度工作日 ?? '-' }}</div>
+                  <div class="stat-label">年度工作日</div>
+                </template>
+              </van-grid-item>
+              <van-grid-item>
+                <template #text>
+                  <div class="stat-value">{{ info.年度在岗日 ?? '-' }}</div>
+                  <div class="stat-label">年度在岗日</div>
+                </template>
+              </van-grid-item>
+              <van-grid-item>
+                <template #text>
+                  <div class="stat-value">{{ info.年度缺勤日 ?? '-' }}</div>
+                  <div class="stat-label">年度缺勤日</div>
+                </template>
+              </van-grid-item>
+            </van-grid>
+            </div>
+          </van-tab>
+          <van-tab title="应发项目">
+            <van-cell-group inset class="details-card">
+              <template v-if="payableItems.length > 0">
+                <van-cell
+                  v-for="item in payableItems"
+                  :key="item.label"
+                  :title="item.label"
+                  :value="formatCurrency(item.value)"
+                />
+              </template>
+              <van-empty v-else description="无应发项目" />
+            </van-cell-group>
+          </van-tab>
+          <van-tab title="代扣代缴">
+            <van-cell-group inset class="details-card">
+              <template v-if="deductionItems.length > 0">
+                <van-cell
+                  v-for="item in deductionItems"
+                  :key="item.label"
+                  :title="item.label"
+                  :value="formatValue(item.value)"
+                />
+              </template>
+              <van-empty v-else description="无代扣代缴项目" />
+            </van-cell-group>
+          </van-tab>
+        </van-tabs>
       </div>
     </van-pull-refresh>
 
     <div v-if="info" class="bottom-bar" v-motion-slide-visible-bottom>
-      <span>实发绩效合计</span>
-      <span class="money">¥{{ animatedFinalAmount.toFixed(2) }}</span>
+      <div v-if="activeTab === 0" class="bottom-summary-grid">
+        <div class="summary-item">
+          <span>应发项目合计</span>
+          <span class="money">{{ formatCurrency(totalPayable) }}</span>
+        </div>
+        <div class="summary-item">
+          <span>代扣代缴合计</span>
+          <span class="money">{{ formatCurrency(totalDeductions) }}</span>
+        </div>
+        <div class="summary-item">
+          <span>实发绩效合计</span>
+          <span class="money accent">{{ formatCurrency(animatedFinalAmount) }}</span>
+        </div>
+      </div>
+      <template v-else-if="activeTab === 1">
+        <span>应发项目合计</span>
+        <span class="money">{{ formatCurrency(totalPayable) }}</span>
+      </template>
+      <template v-else-if="activeTab === 2">
+        <span>代扣代缴合计</span>
+        <span class="money">{{ formatCurrency(totalDeductions) }}</span>
+      </template>
     </div>
   </div>
 </template>
@@ -104,10 +131,11 @@ const formatCurrency = (value: any): string => {
   if (value === null || value === undefined) {
     return '-'
   }
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  const num = typeof value === 'number' ? value : value.value
+  if (typeof num !== 'number' || !Number.isFinite(num)) {
     return '-'
   }
-  return `¥${value.toFixed(2)}`
+  return `¥${num.toFixed(2)}`
 }
 
 const formatValue = (value: any): string => {
@@ -126,7 +154,7 @@ const payableItems = computed(() => {
     { label: '核定年薪', value: info.value.核定年薪 },
     { label: '协商年薪', value: info.value.应发年薪引进 },
     { label: '协商月薪', value: info.value.协商月薪 },
-    { label: '年终奖', value: info.value.年终奖实发 },
+    { label: '年终奖', value: info.value.年终奖 },
     { label: '过节费', value: info.value.过节费 },
     { label: '超利奖', value: info.value.超利奖 },
     { label: '双降奖', value: info.value.双降奖 },
@@ -149,6 +177,27 @@ const deductionItems = computed(() => {
   ]
 })
 
+const totalPayable = computed(() => {
+  if (!info.value) return 0
+  return payableItems.value.reduce((acc, item) => acc + (item.value || 0), 0)
+})
+
+const totalDeductions = computed(() => {
+  if (!info.value) return 0
+  return deductionItems.value.reduce((acc, item) => acc + (item.value || 0), 0)
+})
+
+const formatToWan = (value: number) => {
+  if (value === 0) return '0'
+  if (Math.abs(value) < 10000) {
+    return value.toFixed(2)
+  }
+  return `${(value / 10000).toFixed(1)}w`
+}
+
+const totalPayableText = computed(() => (info.value ? formatToWan(totalPayable.value) : '-'))
+const totalDeductionsText = computed(() => (info.value ? formatToWan(totalDeductions.value) : '-'))
+const finalAmountText = computed(() => (info.value ? formatToWan(finalAmount.value) : '-'))
 
 // --- 动画效果 (已是健壮的) ---
 const finalAmount = computed(() => info.value?.实发绩效 ?? 0)
@@ -157,7 +206,6 @@ const animatedFinalAmount = useTransition(finalAmount, {
   duration: 1200,
   transition: TransitionPresets.easeOutCubic,
 })
-
 
 // --- 数据加载 ---
 async function loadData() {
@@ -196,7 +244,7 @@ loadData()
 .performance-page {
   min-height: 100vh;
   background-color: var(--bg-color);
-  padding-bottom: 80px; /* 为底部悬浮条留出空间 */
+  padding-bottom: 120px; /* 为底部悬浮条留出空间 */
 }
 
 .performance-content {
@@ -207,6 +255,13 @@ loadData()
   padding: 16px;
   background-color: var(--card-bg);
   border-radius: 12px;
+}
+
+.nav-bar-summary {
+  font-size: 12px;
+  color: var(--van-text-color-2);
+  text-align: right;
+  flex-grow: 1;
 }
 
 /* 用户卡片 */
@@ -273,6 +328,7 @@ loadData()
 /* 详情Tabs */
 .details-tabs {
   --van-tabs-line-height: 40px;
+  padding-top: 12px;
 }
 .details-tabs .van-tab {
   color: var(--sub-text-color);
@@ -307,12 +363,38 @@ loadData()
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
+  height: auto;
 }
 
 .money {
   font-size: 22px;
   font-weight: 700;
   color: var(--accent-color);
+}
+
+.bottom-summary-grid {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.summary-item .money {
+  font-size: 18px;
+  color: var(--text-color);
+  font-weight: 600;
+}
+.summary-item .money.accent {
+  color: var(--accent-color);
+  font-size: 20px;
+  font-weight: 700;
 }
 
 /* Vant组件样式覆盖 */
